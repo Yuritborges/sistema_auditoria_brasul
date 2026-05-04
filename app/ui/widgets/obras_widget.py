@@ -1,5 +1,9 @@
-from PySide6.QtCore import Qt
+from datetime import date, datetime
+from typing import Optional
+
+from PySide6.QtCore import QDate, Qt
 from PySide6.QtWidgets import (
+    QDateEdit,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -51,8 +55,22 @@ class ObrasWidget(QWidget):
         self.ed_item.setPlaceholderText("Material / item…")
         self.ed_comprador = QLineEdit()
         self.ed_comprador.setPlaceholderText("Comprador…")
-        self.ed_periodo = QLineEdit()
-        self.ed_periodo.setPlaceholderText("Período (dd/mm/aaaa–dd/mm/aaaa)")
+
+        today = QDate.currentDate()
+        jan1 = QDate(today.year(), 1, 1)
+        self.dt_ini = QDateEdit()
+        self.dt_ini.setCalendarPopup(True)
+        self.dt_ini.setDisplayFormat("dd/MM/yyyy")
+        self.dt_ini.setDate(jan1)
+        self.dt_ini.setMaximumDate(today)
+        self.dt_fim = QDateEdit()
+        self.dt_fim.setCalendarPopup(True)
+        self.dt_fim.setDisplayFormat("dd/MM/yyyy")
+        self.dt_fim.setDate(today)
+        self.dt_fim.setMaximumDate(today)
+        self.dt_ini.dateChanged.connect(self._limitar_periodo)
+        self.dt_fim.dateChanged.connect(self._limitar_periodo)
+
         btn = QPushButton("Aplicar")
         btn.clicked.connect(self._aplicar)
 
@@ -70,7 +88,16 @@ class ObrasWidget(QWidget):
         filtros.addWidget(_fl("Comprador"), 1, 2)
         filtros.addWidget(self.ed_comprador, 1, 3)
         filtros.addWidget(_fl("Período"), 2, 0)
-        filtros.addWidget(self.ed_periodo, 2, 1, 1, 2)
+        period_row = QHBoxLayout()
+        period_row.setSpacing(10)
+        period_row.addWidget(self.dt_ini, 1)
+        lbl_ate = QLabel("até")
+        lbl_ate.setObjectName("fieldLabel")
+        period_row.addWidget(lbl_ate)
+        period_row.addWidget(self.dt_fim, 1)
+        period_wrap = QWidget()
+        period_wrap.setLayout(period_row)
+        filtros.addWidget(period_wrap, 2, 1, 1, 2)
         filtros.addWidget(btn, 2, 3)
         c_layout.addLayout(filtros)
         root.addWidget(card)
@@ -127,6 +154,41 @@ class ObrasWidget(QWidget):
                 self._aplicar()
                 return
 
+    def _limitar_periodo(self):
+        today = QDate.currentDate()
+        d0 = self.dt_ini.date()
+        d1 = self.dt_fim.date()
+        self.dt_ini.blockSignals(True)
+        self.dt_fim.blockSignals(True)
+        try:
+            self.dt_ini.setMaximumDate(min(d1, today))
+            self.dt_fim.setMinimumDate(d0)
+            self.dt_fim.setMaximumDate(today)
+            if d0 > d1:
+                self.dt_fim.setDate(d0)
+            elif d1 > today:
+                self.dt_fim.setDate(today)
+        finally:
+            self.dt_ini.blockSignals(False)
+            self.dt_fim.blockSignals(False)
+
+    @staticmethod
+    def _qdate_to_date(qd: QDate) -> date:
+        return date(qd.year(), qd.month(), qd.day())
+
+    @staticmethod
+    def _pedido_data(p) -> Optional[date]:
+        dt = p.get("_data_ord")
+        if isinstance(dt, datetime):
+            return dt.date()
+        txt = (p.get("data_pedido") or "").strip()
+        for fmt in ("%d/%m/%Y", "%d/%m/%y"):
+            try:
+                return datetime.strptime(txt, fmt).date()
+            except ValueError:
+                continue
+        return None
+
     def set_data(self, dados):
         self._dados = dados
         obras = sorted({(d.get("obra_nome") or "").strip() for d in dados if (d.get("obra_nome") or "").strip()})
@@ -140,6 +202,11 @@ class ObrasWidget(QWidget):
         fornecedor = self.ed_fornecedor.text().strip().upper()
         item = self.ed_item.text().strip().upper()
         comprador = self.ed_comprador.text().strip().upper()
+        d_ini = self._qdate_to_date(self.dt_ini.date())
+        d_fim = self._qdate_to_date(self.dt_fim.date())
+        if d_ini > d_fim:
+            d_ini, d_fim = d_fim, d_ini
+
         filtrados = []
         for d in self._dados:
             if obra != "TODAS" and obra != (d.get("obra_nome") or "").strip().upper():
@@ -149,6 +216,9 @@ class ObrasWidget(QWidget):
             if item and item not in (d.get("itens_texto") or "").upper():
                 continue
             if comprador and comprador not in (d.get("comprador") or "").upper():
+                continue
+            pd = self._pedido_data(d)
+            if pd is not None and (pd < d_ini or pd > d_fim):
                 continue
             filtrados.append(d)
         obra_ref = obra if obra != "TODAS" else (filtrados[0].get("obra_nome") if filtrados else "")

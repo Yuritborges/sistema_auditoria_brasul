@@ -338,7 +338,7 @@ QPushButton#tablePdfButton {
 }
 
 /* ---------- campos ---------- */
-QLineEdit, QComboBox {
+QLineEdit, QComboBox, QDateEdit {
     background: #ffffff;
     border: 1px solid #cbd5e1;
     border-radius: 10px;
@@ -347,7 +347,7 @@ QLineEdit, QComboBox {
     selection-background-color: #bfdbfe;
     selection-color: #0f172a;
 }
-QLineEdit:focus, QComboBox:focus {
+QLineEdit:focus, QComboBox:focus, QDateEdit:focus {
     border: 2px solid #3b82f6;
     padding: 7px 11px;
 }
