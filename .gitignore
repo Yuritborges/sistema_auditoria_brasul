@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# App local / sensível
+.env
+*.log
+cache/
+# Bancos locais (ajuste se quiser versionar um .db de exemplo)
+database/*.db
+*.db-journal
+
+# Build / empacotamento
+build/
+dist/
+*.spec
+*.egg-info/
+
+# OS
+Thumbs.db
+Desktop.ini

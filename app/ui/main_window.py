@@ -25,9 +25,17 @@ class MainWindowPatrao(QMainWindow):
 
         self.setStyleSheet("""
             QMainWindow {
-                background: #f3f5f8;
+                background: #f1f5f9;
             }
         """)
 
-        service = AuditoriaService()
-        self.setCentralWidget(AuditShellWidget(service))
+        self.service = AuditoriaService()
+        self.audit_shell = AuditShellWidget(self.service)
+        self.setCentralWidget(self.audit_shell)
+
+    def closeEvent(self, event):
+        try:
+            self.service.shutdown()
+        except Exception:
+            pass
+        super().closeEvent(event)

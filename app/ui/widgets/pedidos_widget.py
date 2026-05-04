@@ -4,7 +4,6 @@ from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QFrame,
-    QComboBox,
     QGridLayout,
     QHBoxLayout,
     QLabel,
@@ -17,6 +16,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.ui.widgets.brasul_combo import BrasulComboBox
+
+PAGE_CHUNK = 300
+
 
 class PedidosWidget(QWidget):
     def __init__(self, service):
@@ -24,37 +27,55 @@ class PedidosWidget(QWidget):
         self.service = service
         self._dados = []
         self._filtrados = []
+        self._visible_rows = PAGE_CHUNK
         self._build()
 
     def _build(self):
         root = QVBoxLayout(self)
-        title = QLabel("Consulta de Pedidos")
-        title.setObjectName("sectionTitle")
-        root.addWidget(title)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(14)
+
+        hero = QVBoxLayout()
+        hero.setSpacing(4)
+        ht = QLabel("Consulta de pedidos")
+        ht.setObjectName("moduleHeroTitle")
+        hd = QLabel(
+            "Filtre por comprador, obra, status. A varredura completa na pasta de pedidos fica em “Buscar PDFs”."
+        )
+        hd.setObjectName("moduleHeroDesc")
+        hero.addWidget(ht)
+        hero.addWidget(hd)
+        root.addLayout(hero)
 
         filtros_card = QFrame()
         filtros_card.setObjectName("panelCard")
         filtros = QGridLayout(filtros_card)
-        filtros.setContentsMargins(10, 10, 10, 10)
-        filtros.setHorizontalSpacing(8)
-        filtros.setVerticalSpacing(8)
-        self.cb_comprador = QComboBox()
-        self.cb_obra = QComboBox()
-        self.cb_status = QComboBox()
+        filtros.setContentsMargins(16, 16, 16, 16)
+        filtros.setHorizontalSpacing(12)
+        filtros.setVerticalSpacing(10)
+        self.cb_comprador = BrasulComboBox()
+        self.cb_obra = BrasulComboBox()
+        self.cb_status = BrasulComboBox()
         self.cb_status.addItems(["TODOS", "OK", "Sem PDF", "Sem comprador", "Critico"])
         self.ed_item = QLineEdit()
-        self.ed_item.setPlaceholderText("Item/material...")
+        self.ed_item.setPlaceholderText("Item / material…")
         self.ed_forn = QLineEdit()
-        self.ed_forn.setPlaceholderText("Fornecedor...")
-        filtros.addWidget(QLabel("Comprador"), 0, 0)
+        self.ed_forn.setPlaceholderText("Fornecedor…")
+
+        def _fl(text):
+            lb = QLabel(text)
+            lb.setObjectName("fieldLabel")
+            return lb
+
+        filtros.addWidget(_fl("Comprador"), 0, 0)
         filtros.addWidget(self.cb_comprador, 0, 1)
-        filtros.addWidget(QLabel("Obra"), 0, 2)
+        filtros.addWidget(_fl("Obra"), 0, 2)
         filtros.addWidget(self.cb_obra, 0, 3)
-        filtros.addWidget(QLabel("Status"), 0, 4)
+        filtros.addWidget(_fl("Status"), 0, 4)
         filtros.addWidget(self.cb_status, 0, 5)
-        filtros.addWidget(QLabel("Fornecedor"), 1, 0)
+        filtros.addWidget(_fl("Fornecedor"), 1, 0)
         filtros.addWidget(self.ed_forn, 1, 1, 1, 2)
-        filtros.addWidget(QLabel("Item"), 1, 3)
+        filtros.addWidget(_fl("Item"), 1, 3)
         filtros.addWidget(self.ed_item, 1, 4, 1, 2)
         btn_filtrar = QPushButton("Filtrar")
         btn_filtrar.clicked.connect(self.aplicar_filtros)
@@ -65,27 +86,46 @@ class PedidosWidget(QWidget):
         filtros.addWidget(btn_pdf, 2, 5)
         root.addWidget(filtros_card)
 
+        row_resumo = QHBoxLayout()
+        row_resumo.setSpacing(12)
         self.lbl_resumo = QLabel("0 pedidos exibidos")
         self.lbl_resumo.setObjectName("muted")
-        root.addWidget(self.lbl_resumo)
+        row_resumo.addWidget(self.lbl_resumo, 1)
+        self.btn_mais = QPushButton(f"Carregar mais (+{PAGE_CHUNK})")
+        self.btn_mais.setObjectName("secondaryButton")
+        self.btn_mais.clicked.connect(self._carregar_mais_linhas)
+        self.btn_mais.setVisible(False)
+        row_resumo.addWidget(self.btn_mais, 0, Qt.AlignRight)
+        root.addLayout(row_resumo)
 
+        tbl_card = QFrame()
+        tbl_card.setObjectName("panelCard")
+        tbl_l = QVBoxLayout(tbl_card)
+        tbl_l.setContentsMargins(12, 12, 12, 12)
         self.tbl = QTableWidget(0, 11)
-        self.tbl.setHorizontalHeaderLabels(["Pedido", "Data", "Comprador", "Empresa", "Fornecedor", "Obra", "Valor", "Status", "Cond.", "Forma", "PDF"])
+        self.tbl.setHorizontalHeaderLabels(
+            ["Pedido", "Data", "Comprador", "Empresa", "Fornecedor", "Obra", "Valor", "Status", "Cond.", "Forma", "PDF"]
+        )
         self.tbl.verticalHeader().setVisible(False)
         self.tbl.setAlternatingRowColors(True)
+        self.tbl.setShowGrid(False)
+        self.tbl.setFocusPolicy(Qt.NoFocus)
         self.tbl.horizontalHeader().setStretchLastSection(False)
-        self.tbl.setColumnWidth(0, 70)
-        self.tbl.setColumnWidth(1, 90)
-        self.tbl.setColumnWidth(2, 95)
-        self.tbl.setColumnWidth(3, 90)
+        self.tbl.setColumnWidth(0, 72)
+        self.tbl.setColumnWidth(1, 92)
+        self.tbl.setColumnWidth(2, 100)
+        self.tbl.setColumnWidth(3, 92)
         self.tbl.setColumnWidth(4, 170)
         self.tbl.setColumnWidth(5, 220)
-        self.tbl.setColumnWidth(6, 100)
-        self.tbl.setColumnWidth(7, 95)
-        self.tbl.setColumnWidth(8, 80)
-        self.tbl.setColumnWidth(9, 80)
-        self.tbl.setColumnWidth(10, 64)
-        root.addWidget(self.tbl, 1)
+        self.tbl.setColumnWidth(6, 104)
+        self.tbl.setColumnWidth(7, 100)
+        self.tbl.setColumnWidth(8, 82)
+        self.tbl.setColumnWidth(9, 82)
+        self.tbl.setColumnWidth(10, 72)
+        tbl_l.addWidget(self.tbl)
+        root.addWidget(tbl_card, 1)
+
+        self.tbl.cellClicked.connect(self._on_pdf_cell_clicked)
 
     def set_data(self, dados):
         self._dados = list(dados)
@@ -98,6 +138,11 @@ class PedidosWidget(QWidget):
         self.cb_comprador.addItems(compradores)
         self.cb_obra.addItems(obras)
         self.aplicar_filtros()
+
+    def _carregar_mais_linhas(self):
+        self._visible_rows = min(len(self._filtrados), self._visible_rows + PAGE_CHUNK)
+        self._fill_table()
+        self._atualizar_texto_resumo()
 
     def aplicar_filtros(self):
         comprador = self.cb_comprador.currentText().strip().upper()
@@ -118,8 +163,18 @@ class PedidosWidget(QWidget):
             if item and item not in (d.get("itens_texto") or "").upper():
                 continue
             self._filtrados.append(d)
+        self._visible_rows = min(PAGE_CHUNK, len(self._filtrados)) if self._filtrados else 0
         self._fill_table()
-        self.lbl_resumo.setText(f"{len(self._filtrados)} pedidos exibidos")
+        self._atualizar_texto_resumo()
+
+    def _atualizar_texto_resumo(self):
+        total = len(self._filtrados)
+        shown = min(self._visible_rows, total)
+        if total > shown:
+            self.lbl_resumo.setText(f"{shown} de {total} pedidos no filtro — carregue mais linhas abaixo ou refine o filtro.")
+        else:
+            self.lbl_resumo.setText(f"{total} pedidos exibidos.")
+        self.btn_mais.setVisible(total > shown)
 
     def buscar_pdfs(self):
         filtros = {
@@ -130,40 +185,57 @@ class PedidosWidget(QWidget):
         }
         total = self.service.buscar_pdfs_filtrados(self._filtrados, filtros)
         self._fill_table()
+        self._atualizar_texto_resumo()
         QMessageBox.information(self, "PDFs", f"PDFs encontrados para os filtros atuais: {total}")
 
     def _fill_table(self):
-        self.tbl.setRowCount(0)
-        for i, d in enumerate(self._filtrados):
-            self.tbl.insertRow(i)
-            self.tbl.setRowHeight(i, 28)
-            vals = [
-                str(d.get("numero") or ""),
-                str(d.get("data_pedido") or ""),
-                str(d.get("comprador") or "SEM COMPRADOR"),
-                str(d.get("empresa_faturadora") or ""),
-                str(d.get("fornecedor_nome") or ""),
-                str(d.get("obra_nome") or ""),
-                self._fmt(d.get("valor_total")),
-                str(d.get("status_auditoria") or ""),
-                str(d.get("condicao_pagamento") or ""),
-                str(d.get("forma_pagamento") or ""),
-                "Abrir" if d.get("pdf_rede") else "Sem PDF",
-            ]
-            for c, v in enumerate(vals):
-                it = QTableWidgetItem(v)
-                if c in (0, 1, 2, 6, 7, 10):
-                    it.setTextAlignment(Qt.AlignCenter)
-                self.tbl.setItem(i, c, it)
-            if d.get("pdf_rede"):
-                btn = QPushButton("Abrir")
-                btn.setObjectName("tablePdfButton")
-                btn.clicked.connect(lambda _, p=d.get("pdf_rede"): self._abrir_pdf(p))
-                self.tbl.setCellWidget(i, 10, btn)
+        self.tbl.setUpdatesEnabled(False)
+        try:
+            self.tbl.clearContents()
+            self.tbl.setRowCount(0)
+            chunk = self._filtrados[: self._visible_rows]
+            for i, d in enumerate(chunk):
+                self.tbl.insertRow(i)
+                self.tbl.setRowHeight(i, 32)
+                path_pdf = (d.get("pdf_rede") or "").strip()
+                vals = [
+                    str(d.get("numero") or ""),
+                    str(d.get("data_pedido") or ""),
+                    str(d.get("comprador") or "SEM COMPRADOR"),
+                    str(d.get("empresa_faturadora") or ""),
+                    str(d.get("fornecedor_nome") or ""),
+                    str(d.get("obra_nome") or ""),
+                    self._fmt(d.get("valor_total")),
+                    str(d.get("status_auditoria") or ""),
+                    str(d.get("condicao_pagamento") or ""),
+                    str(d.get("forma_pagamento") or ""),
+                    "Abrir PDF" if path_pdf else "Sem PDF",
+                ]
+                for c, v in enumerate(vals):
+                    it = QTableWidgetItem(v)
+                    if c in (0, 1, 2, 6, 7, 10):
+                        it.setTextAlignment(Qt.AlignCenter)
+                    self.tbl.setItem(i, c, it)
+                it_pdf = self.tbl.item(i, 10)
+                if it_pdf and path_pdf:
+                    it_pdf.setData(Qt.ItemDataRole.UserRole, path_pdf)
+                    it_pdf.setToolTip(path_pdf)
+        finally:
+            self.tbl.setUpdatesEnabled(True)
+
+    def _on_pdf_cell_clicked(self, row, col):
+        if col != 10:
+            return
+        it = self.tbl.item(row, 10)
+        if not it:
+            return
+        path = it.data(Qt.ItemDataRole.UserRole)
+        if path:
+            self._abrir_pdf(path)
 
     def _abrir_pdf(self, caminho):
         if not caminho or not os.path.exists(caminho):
-            QMessageBox.warning(self, "PDF", "PDF nao encontrado.")
+            QMessageBox.warning(self, "PDF", "PDF não encontrado.")
             return
         QDesktopServices.openUrl(QUrl.fromLocalFile(caminho))
 

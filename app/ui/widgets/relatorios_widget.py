@@ -1,7 +1,16 @@
 import os
 from datetime import datetime
 
-from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QFileDialog,
+    QFrame,
+    QGridLayout,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 
 class RelatoriosWidget(QWidget):
@@ -13,33 +22,53 @@ class RelatoriosWidget(QWidget):
 
     def _build(self):
         root = QVBoxLayout(self)
-        title = QLabel("Relatorios")
-        title.setObjectName("sectionTitle")
-        root.addWidget(title)
-        subtitle = QLabel("Exportacoes prioritarias (CSV compativel com Excel)")
-        subtitle.setObjectName("muted")
-        root.addWidget(subtitle)
-        row = QHBoxLayout()
-        for txt, fn in [
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(14)
+
+        hero = QVBoxLayout()
+        hero.setSpacing(4)
+        ht = QLabel("Relatórios")
+        ht.setObjectName("moduleHeroTitle")
+        hd = QLabel("Exportações em CSV (compatível com Excel) para análises externas.")
+        hd.setObjectName("moduleHeroDesc")
+        hero.addWidget(ht)
+        hero.addWidget(hd)
+        root.addLayout(hero)
+
+        card = QFrame()
+        card.setObjectName("panelCard")
+        lay = QVBoxLayout(card)
+        lay.setContentsMargins(20, 20, 20, 20)
+        lay.setSpacing(14)
+        subtitle = QLabel("Escolha o tipo de consolidado")
+        subtitle.setObjectName("sectionTitle")
+        lay.addWidget(subtitle)
+        grid = QGridLayout()
+        grid.setSpacing(12)
+        actions = [
             ("Geral por obra", self._exportar_obras),
             ("Por fornecedor", self._exportar_fornecedores),
             ("Mensal", self._exportar_mensal),
             ("Curva ABC", self._exportar_abc),
-        ]:
+        ]
+        for i, (txt, fn) in enumerate(actions):
             b = QPushButton(txt)
             b.setObjectName("secondaryButton")
             b.clicked.connect(fn)
-            row.addWidget(b)
-        root.addLayout(row)
-        self.lbl = QLabel("Escolha um relatorio para exportar.")
-        root.addWidget(self.lbl)
+            grid.addWidget(b, i // 2, i % 2)
+        lay.addLayout(grid)
+        self.lbl = QLabel("Escolha um relatório para exportar.")
+        self.lbl.setObjectName("muted")
+        self.lbl.setWordWrap(True)
+        lay.addWidget(self.lbl)
+        root.addWidget(card)
         root.addStretch()
 
     def set_data(self, dados):
         self._dados = dados
 
     def _pick_path(self, sug):
-        path, _ = QFileDialog.getSaveFileName(self, "Salvar relatorio", sug, "CSV (*.csv)")
+        path, _ = QFileDialog.getSaveFileName(self, "Salvar relatório", sug, "CSV (*.csv)")
         return path
 
     def _exportar_obras(self):
@@ -78,4 +107,4 @@ class RelatoriosWidget(QWidget):
             self.service.exportar_csv(path, colunas, linhas)
             self.lbl.setText(f"Arquivo gerado: {path}")
         except Exception as e:
-            QMessageBox.critical(self, "Erro", f"Falha ao gerar relatorio.\n\n{e}")
+            QMessageBox.critical(self, "Erro", f"Falha ao gerar relatório.\n\n{e}")

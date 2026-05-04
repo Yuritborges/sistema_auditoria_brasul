@@ -4,6 +4,7 @@ import ctypes
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 from app.ui.main_window import MainWindowPatrao
+from app.ui.style import APP_STYLESHEET
 
 
 def _icone_app_path():
@@ -27,6 +28,10 @@ def main():
             pass
 
     app = QApplication(sys.argv)
+    # Fusion aplica melhor QSS no Windows (barras de rolagem legíveis, menos artefatos visuais).
+    app.setStyle("Fusion")
+    # Aplica identidade visual global (inclui popups/combobox/messagebox).
+    app.setStyleSheet(APP_STYLESHEET)
     icon_path = _icone_app_path()
     if icon_path:
         app.setWindowIcon(QIcon(icon_path))

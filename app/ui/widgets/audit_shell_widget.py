@@ -1,7 +1,22 @@
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMessageBox, QPushButton, QStackedWidget, QVBoxLayout, QWidget
+import os
 
-from app.core.auth import can_access
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtWidgets import (
+    QDialog,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QMessageBox,
+    QPushButton,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
+)
+
+from app.core.auth import PERMISSIONS_BY_PROFILE, can_access, normalize_profile
+from app.ui.branding import logo_label_compact, logo_label_sidebar
 from app.ui.style import APP_STYLESHEET
 from app.ui.widgets.auditoria_widget import AuditoriaWidget
 from app.ui.widgets.dashboard_widget import DashboardWidget
@@ -12,6 +27,7 @@ from app.ui.widgets.obras_widget import ObrasWidget
 from app.ui.widgets.orcamentos_widget import OrcamentosWidget
 from app.ui.widgets.pedidos_widget import PedidosWidget
 from app.ui.widgets.relatorios_widget import RelatoriosWidget
+from app.ui.widgets.user_session_dialog import UserSessionDialog
 from app.ui.widgets.usuarios_widget import UsuariosWidget
 
 
@@ -22,122 +38,235 @@ class AuditShellWidget(QWidget):
         ("pedidos", "Pedidos"),
         ("itens", "Itens/Materiais"),
         ("fornecedores", "Fornecedores"),
-        ("locacoes", "Locacoes"),
-        ("orcamentos", "Orcamentos"),
-        ("relatorios", "Relatorios"),
-        ("auditoria", "Auditoria/Historico"),
-        ("configuracoes", "Configuracoes"),
+        ("locacoes", "Locações"),
+        ("orcamentos", "Orçamentos"),
+        ("relatorios", "Relatórios"),
+        ("auditoria", "Auditoria/Histórico"),
+        ("configuracoes", "Configurações"),
     ]
 
     def __init__(self, service):
         super().__init__()
         self.service = service
-        self.profile = "PATRAO"
-        self.current_user = "PATRAO"
         self._dados = []
+        self._widget_data_version = {}
+        self._data_version = 0
+
+        # Sessão via variáveis de ambiente (atalho para .bat / integração futura).
+        raw_prof = (os.environ.get("AUDITORIA_PERFIL") or "ADMIN").strip().upper()
+        self.profile = normalize_profile(raw_prof)
+        if self.profile not in PERMISSIONS_BY_PROFILE:
+            self.profile = "COMPRADOR"
+        raw_user = (os.environ.get("AUDITORIA_USUARIO") or "").strip().upper()
+        self.current_user = raw_user or self.profile
+        if not raw_user:
+            self._ask_session_user()
         self._build()
-        self.recarregar()
+        QTimer.singleShot(0, lambda: self.recarregar(force=False))
+
+    def _ask_session_user(self):
+        try:
+            users = self.service.listar_usuarios()
+            dlg = UserSessionDialog(self.service, users, self)
+            if dlg.exec() == QDialog.Accepted:
+                user, profile = dlg.selected()
+                self.current_user = user
+                self.profile = normalize_profile(profile)
+        except Exception:
+            # Fallback silencioso para não bloquear abertura do app.
+            self.current_user = self.current_user or "ADMIN"
+            self.profile = normalize_profile(self.profile or "ADMIN")
 
     def _build(self):
         self.setStyleSheet(APP_STYLESHEET)
-        root = QVBoxLayout(self)
-        root.setContentsMargins(12, 12, 12, 12)
-        root.setSpacing(10)
+
+        root = QHBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        self.sidebar = QFrame()
+        self.sidebar.setObjectName("sidebar")
+        self.sidebar.setFixedWidth(268)
+        side_l = QVBoxLayout(self.sidebar)
+        side_l.setContentsMargins(14, 20, 14, 18)
+        side_l.setSpacing(16)
+
+        self.logo_sidebar = logo_label_sidebar(self.sidebar)
+        if self.logo_sidebar:
+            side_l.addWidget(self.logo_sidebar)
+
+        brand_box = QVBoxLayout()
+        brand_box.setSpacing(4)
+        self.lbl_brand = QLabel("Brasul")
+        self.lbl_brand.setObjectName("sidebarBrand")
+        self.lbl_tagline = QLabel("Auditoria & compras")
+        self.lbl_tagline.setObjectName("sidebarTagline")
+        if self.logo_sidebar:
+            brand_box.addWidget(self.lbl_tagline)
+        else:
+            brand_box.addWidget(self.lbl_brand)
+            brand_box.addWidget(self.lbl_tagline)
+        side_l.addLayout(brand_box)
+
+        lbl_mod = QLabel("Módulos")
+        lbl_mod.setObjectName("sectionTitle")
+        side_l.addWidget(lbl_mod)
+
+        self.menu = QListWidget()
+        self.menu.setObjectName("navMenu")
+        self.menu.setSpacing(2)
+        self.menu.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.menu.currentRowChanged.connect(self._switch)
+        side_l.addWidget(self.menu, 1)
+
+        self.btn_refresh = QPushButton("Recarregar dados")
+        self.btn_refresh.setObjectName("secondaryButton")
+        self.btn_refresh.clicked.connect(lambda: self.recarregar(force=True))
+        side_l.addWidget(self.btn_refresh)
+
+        root.addWidget(self.sidebar)
+
+        self.content_host = QWidget()
+        self.content_host.setObjectName("contentHost")
+        content_outer = QVBoxLayout(self.content_host)
+        content_outer.setContentsMargins(18, 18, 18, 18)
+        content_outer.setSpacing(14)
 
         top = QFrame()
         top.setObjectName("topbar")
         top_l = QHBoxLayout(top)
+        top_l.setContentsMargins(18, 14, 18, 14)
+        top_l.setSpacing(14)
+
         self.lbl_title = QLabel("Sistema de Auditoria Brasul")
         self.lbl_title.setObjectName("pageTitle")
         self.lbl_subtitle = QLabel("Resumo executivo, auditoria e controle gerencial")
         self.lbl_subtitle.setObjectName("pageSubtitle")
         self.lbl_source = QLabel("Fonte: carregando...")
         self.lbl_source.setObjectName("muted")
-        self.lbl_user = QLabel(f"Perfil: {self.profile} | Usuario: {self.current_user}")
+        self.lbl_source.setWordWrap(True)
+        self.lbl_user = QLabel(f"Perfil: {self.profile}  •  Usuário: {self.current_user}")
         self.lbl_user.setObjectName("muted")
+
+        head_row = QHBoxLayout()
+        head_row.setSpacing(14)
+        self.logo_topbar = logo_label_compact(top)
+        if self.logo_topbar:
+            head_row.addWidget(self.logo_topbar, 0, Qt.AlignVCenter | Qt.AlignLeft)
         text_col = QVBoxLayout()
-        text_col.setSpacing(2)
+        text_col.setSpacing(4)
         text_col.addWidget(self.lbl_title)
         text_col.addWidget(self.lbl_subtitle)
-        top_l.addLayout(text_col)
-        top_l.addStretch()
-        top_l.addWidget(self.lbl_source)
-        top_l.addWidget(self.lbl_user)
-        self.btn_refresh = QPushButton("Recarregar")
-        self.btn_refresh.setObjectName("secondaryButton")
-        self.btn_refresh.clicked.connect(self.recarregar)
-        top_l.addWidget(self.btn_refresh)
-        root.addWidget(top)
+        head_row.addLayout(text_col, 1)
+        top_l.addLayout(head_row, 1)
 
-        body = QHBoxLayout()
-        menu_wrap = QFrame()
-        menu_wrap.setObjectName("menu")
-        menu_wrap.setMaximumWidth(260)
-        menu_layout = QVBoxLayout(menu_wrap)
-        lbl_mod = QLabel("Modulos")
-        lbl_mod.setObjectName("sectionTitle")
-        menu_layout.addWidget(lbl_mod)
-        self.menu = QListWidget()
-        self.menu.currentRowChanged.connect(self._switch)
-        menu_layout.addWidget(self.menu, 1)
-        body.addWidget(menu_wrap)
+        meta_col = QVBoxLayout()
+        meta_col.setSpacing(6)
+        meta_col.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        meta_col.addWidget(self.lbl_source, 0, Qt.AlignRight)
+        meta_col.addWidget(self.lbl_user, 0, Qt.AlignRight)
+        top_l.addLayout(meta_col)
+
+        content_outer.addWidget(top)
 
         self.stack = QStackedWidget()
-        body.addWidget(self.stack, 1)
-        root.addLayout(body, 1)
+        content_outer.addWidget(self.stack, 1)
 
-        self.w_dashboard = DashboardWidget(self.service)
-        self.w_obras = ObrasWidget(self.service)
-        self.w_pedidos = PedidosWidget(self.service)
-        self.w_itens = ItensWidget(self.service)
-        self.w_fornecedores = FornecedoresWidget(self.service)
-        self.w_locacoes = LocacoesWidget()
-        self.w_orcamentos = OrcamentosWidget(self.service, self._usuario)
-        self.w_relatorios = RelatoriosWidget(self.service)
-        self.w_auditoria = AuditoriaWidget(self.service)
-        self.w_usuarios = UsuariosWidget(self.service, self._usuario)
+        root.addWidget(self.content_host, 1)
 
-        self.widgets_map = {
-            "dashboard": self.w_dashboard,
-            "obras": self.w_obras,
-            "pedidos": self.w_pedidos,
-            "itens": self.w_itens,
-            "fornecedores": self.w_fornecedores,
-            "locacoes": self.w_locacoes,
-            "orcamentos": self.w_orcamentos,
-            "relatorios": self.w_relatorios,
-            "auditoria": self.w_auditoria,
-            "configuracoes": self.w_usuarios,
+        # Carregamento preguiçoso dos módulos: cria widget só quando o usuário abre.
+        self.widget_factories = {
+            "dashboard": lambda: DashboardWidget(self.service),
+            "obras": lambda: ObrasWidget(self.service),
+            "pedidos": lambda: PedidosWidget(self.service),
+            "itens": lambda: ItensWidget(self.service),
+            "fornecedores": lambda: FornecedoresWidget(self.service),
+            "locacoes": lambda: LocacoesWidget(),
+            "orcamentos": lambda: OrcamentosWidget(self.service, self._usuario),
+            "relatorios": lambda: RelatoriosWidget(self.service),
+            "auditoria": lambda: AuditoriaWidget(self.service),
+            "configuracoes": lambda: UsuariosWidget(self.service, self._usuario, self._perfil),
         }
+        self.widgets_map = {}
+        self.placeholders = {}
+        self.stack_index_by_key = {}
 
         self.menu_keys = []
         for key, label in self.MODULES:
             if can_access(self.profile, key):
                 self.menu.addItem(QListWidgetItem(label))
-                self.stack.addWidget(self.widgets_map[key])
+                holder = QWidget()
+                self.stack.addWidget(holder)
+                self.placeholders[key] = holder
+                self.stack_index_by_key[key] = self.stack.indexOf(holder)
                 self.menu_keys.append(key)
 
         if self.menu.count():
             self.menu.setCurrentRow(0)
+            self._ensure_widget(self.menu_keys[0])
+
+    def _ensure_widget(self, key):
+        if key in self.widgets_map:
+            return self.widgets_map[key]
+        widget = self.widget_factories[key]()
+        placeholder = self.placeholders.get(key)
+        idx = self.stack_index_by_key.get(key, -1)
+        if placeholder is not None and idx >= 0:
+            self.stack.insertWidget(idx, widget)
+            self.stack.removeWidget(placeholder)
+            placeholder.deleteLater()
+            self.placeholders.pop(key, None)
+        if key == "dashboard":
+            widget.abrir_modulo_obras.connect(self._navegar_obras)
+        self.widgets_map[key] = widget
+        return widget
+
+    def _navegar_obras(self, obra: str):
+        if "obras" not in self.menu_keys:
+            return
+        idx = self.menu_keys.index("obras")
+        self.menu.setCurrentRow(idx)
+        widget = self._ensure_widget("obras")
+        self.stack.setCurrentWidget(widget)
+        self.lbl_subtitle.setText(f"Módulo ativo · {self.menu.item(idx).text()}")
+        widget.focus_obra(obra)
 
     def _usuario(self):
         return self.current_user
 
-    def recarregar(self):
+    def _perfil(self):
+        return self.profile
+
+    def recarregar(self, force=False):
         try:
-            dados, origem = self.service.carregar()
+            dados, origem = self.service.carregar(force=force)
             self._dados = dados
+            self._data_version += 1
+            self._widget_data_version = {}
             self.lbl_source.setText(origem)
-            for _, widget in self.widgets_map.items():
-                if hasattr(widget, "set_data"):
-                    widget.set_data(self._dados)
+            self._push_data_to_current_widget()
         except Exception as e:
             QMessageBox.critical(self, "Erro", f"Falha ao carregar dados.\n\n{e}")
+
+    def _push_data_to_current_widget(self):
+        idx = self.menu.currentRow()
+        if idx < 0 or idx >= len(self.menu_keys):
+            return
+        key = self.menu_keys[idx]
+        widget = self._ensure_widget(key)
+        if self.stack.currentWidget() is not widget:
+            self.stack.setCurrentWidget(widget)
+        if hasattr(widget, "set_data") and self._widget_data_version.get(key) != self._data_version:
+            widget.set_data(self._dados)
+            self._widget_data_version[key] = self._data_version
 
     def _switch(self, idx):
         if idx < 0:
             return
-        self.stack.setCurrentIndex(idx)
         if idx < len(self.menu_keys):
+            key = self.menu_keys[idx]
+            widget = self._ensure_widget(key)
+            self.stack.setCurrentWidget(widget)
             label = self.menu.item(idx).text()
-            self.lbl_subtitle.setText(f"Modulo ativo: {label}")
+            self.lbl_subtitle.setText(f"Módulo ativo · {label}")
+            self._push_data_to_current_widget()

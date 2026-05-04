@@ -1,5 +1,7 @@
 import os
 import sqlite3
+import hashlib
+import hmac
 from datetime import datetime
 
 
@@ -46,10 +48,15 @@ class AuditStore:
                 CREATE TABLE IF NOT EXISTS usuarios (
                     nome TEXT PRIMARY KEY,
                     perfil TEXT NOT NULL,
-                    ativo INTEGER NOT NULL DEFAULT 1
+                    ativo INTEGER NOT NULL DEFAULT 1,
+                    senha_hash TEXT NOT NULL DEFAULT ''
                 )
                 """
             )
+            # Compatibilidade com bases antigas sem a coluna senha_hash.
+            cols = {r[1] for r in conn.execute("PRAGMA table_info(usuarios)").fetchall()}
+            if "senha_hash" not in cols:
+                conn.execute("ALTER TABLE usuarios ADD COLUMN senha_hash TEXT NOT NULL DEFAULT ''")
             conn.commit()
         finally:
             conn.close()
@@ -113,17 +120,81 @@ class AuditStore:
         finally:
             conn.close()
 
-    def upsert_user(self, nome, perfil, ativo=True):
+    def _hash_password(self, senha):
+        return hashlib.sha256((senha or "").encode("utf-8")).hexdigest()
+
+    def upsert_user(self, nome, perfil, ativo=True, senha=None):
+        conn = self._connect()
+        try:
+            senha_hash = self._hash_password(senha) if senha is not None else None
+            conn.execute(
+                """
+                INSERT INTO usuarios (nome, perfil, ativo, senha_hash)
+                VALUES (?, ?, ?, COALESCE(?, ''))
+                ON CONFLICT(nome) DO UPDATE SET
+                    perfil=excluded.perfil,
+                    ativo=excluded.ativo,
+                    senha_hash=CASE
+                        WHEN ? IS NULL THEN usuarios.senha_hash
+                        ELSE excluded.senha_hash
+                    END
+                """,
+                (
+                    nome.strip().upper(),
+                    perfil.strip().upper(),
+                    1 if ativo else 0,
+                    senha_hash,
+                    senha_hash,
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def verify_user_password(self, nome, senha):
+        conn = self._connect()
+        try:
+            row = conn.execute(
+                "SELECT senha_hash FROM usuarios WHERE nome=? AND ativo=1",
+                (nome.strip().upper(),),
+            ).fetchone()
+            if not row:
+                return False
+            saved = (row["senha_hash"] or "").strip()
+            if not saved:
+                return False
+            return hmac.compare_digest(saved, self._hash_password(senha))
+        finally:
+            conn.close()
+
+    def user_has_password(self, nome):
+        conn = self._connect()
+        try:
+            row = conn.execute(
+                "SELECT senha_hash FROM usuarios WHERE nome=? AND ativo=1",
+                (nome.strip().upper(),),
+            ).fetchone()
+            if not row:
+                return False
+            return bool((row["senha_hash"] or "").strip())
+        finally:
+            conn.close()
+
+    def set_user_password(self, nome, senha):
         conn = self._connect()
         try:
             conn.execute(
-                """
-                INSERT INTO usuarios (nome, perfil, ativo)
-                VALUES (?, ?, ?)
-                ON CONFLICT(nome) DO UPDATE SET perfil=excluded.perfil, ativo=excluded.ativo
-                """,
-                (nome.strip().upper(), perfil.strip().upper(), 1 if ativo else 0),
+                "UPDATE usuarios SET senha_hash=? WHERE nome=?",
+                (self._hash_password(senha), nome.strip().upper()),
             )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def delete_user(self, nome):
+        conn = self._connect()
+        try:
+            conn.execute("DELETE FROM usuarios WHERE nome=?", (nome.strip().upper(),))
             conn.commit()
         finally:
             conn.close()

@@ -1,22 +1,40 @@
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QLabel, QVBoxLayout, QWidget
 
 
 class LocacoesWidget(QWidget):
     def __init__(self):
         super().__init__()
         root = QVBoxLayout(self)
-        root.setContentsMargins(24, 24, 24, 24)
-        lbl = QLabel("Modulo de Locacoes em construcao")
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(14)
+
+        hero = QVBoxLayout()
+        hero.setSpacing(4)
+        ht = QLabel("Locações")
+        ht.setObjectName("moduleHeroTitle")
+        hd = QLabel("Reserva de estrutura para equipamentos, períodos e custos por obra.")
+        hd.setObjectName("moduleHeroDesc")
+        hero.addWidget(ht)
+        hero.addWidget(hd)
+        root.addLayout(hero)
+
+        card = QFrame()
+        card.setObjectName("panelCard")
+        inner = QVBoxLayout(card)
+        inner.setContentsMargins(40, 48, 40, 48)
+        inner.setSpacing(12)
+        lbl = QLabel("Módulo em construção")
+        lbl.setObjectName("emptyStateTitle")
         lbl.setAlignment(Qt.AlignCenter)
-        lbl.setStyleSheet("font-size:24px;font-weight:800;color:#1f2937;")
         sub = QLabel(
-            "Estrutura pronta para evoluir: equipamento, obra, fornecedor, inicio/fim, custo e status."
+            "Próximos passos: equipamento, obra, fornecedor, início/fim, custo e status — alinhado ao fluxo de auditoria."
         )
+        sub.setObjectName("emptyStateBody")
         sub.setAlignment(Qt.AlignCenter)
         sub.setWordWrap(True)
-        sub.setStyleSheet("font-size:12px;color:#6b7280;")
-        root.addStretch()
-        root.addWidget(lbl)
-        root.addWidget(sub)
-        root.addStretch()
+        inner.addStretch()
+        inner.addWidget(lbl)
+        inner.addWidget(sub)
+        inner.addStretch()
+        root.addWidget(card, 1)
