@@ -25,11 +25,24 @@ Ou execute `INICIAR_AUDITORIA.bat`.
 
 ## Fonte de dados
 
-O sistema tenta localizar o banco nesta ordem:
+O painel de auditoria le o **mesmo banco consolidado** que o programa de pedidos mantém na rede:
 
-1. variavel de ambiente `AUDITORIA_DB_PATH`
-2. `Z:\0 OBRAS\brasul_pedidos\cotacao_rede.db`
-3. `database/cotacao_rede.db` dentro do projeto
+| Prioridade | Caminho |
+|------------|---------|
+| 1 | Variável de ambiente `AUDITORIA_DB_PATH` (caminho absoluto para um `.db`) |
+| 2 | `Z:\0 OBRAS\brasul_pedidos\cotacao_rede.db` |
+| 3 | `database/cotacao_rede.db` dentro deste projeto (cópia local de fallback) |
+
+**Atualizar o consolidado** (Iury + Thamyres → `cotacao_rede.db`):
+
+```powershell
+cd "Z:\0 OBRAS\sistema_de_pedidos_brasulv2"
+.\.venv\Scripts\python.exe tools\consolidar_rede.py
+```
+
+Feche o sistema de pedidos nas máquinas se o script acusar banco em uso. Depois de consolidar, reabra a auditoria (ou use *Atualizar* / recarregar se existir) para ver pedidos novos.
+
+**Cadastro de obras (módulo orçamentos):** as obras também são lidas de `brasul_pedidos\cadastros_compartilhados\obras.json`, alinhado ao sistema de pedidos.
 
 Se nao encontrar banco, abre em modo demonstracao para permitir validacao de layout e fluxo.
 
