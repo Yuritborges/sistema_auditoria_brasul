@@ -351,6 +351,55 @@ QLineEdit:focus, QComboBox:focus, QDateEdit:focus {
     border: 2px solid #3b82f6;
     padding: 7px 11px;
 }
+QDateEdit::drop-down {
+    border: none;
+    width: 26px;
+}
+QDateEdit::down-arrow {
+    width: 10px;
+    height: 10px;
+}
+/* Calendário popup do QDateEdit (evita barra/preenchimento preto no Windows). */
+QCalendarWidget {
+    background: #ffffff;
+    color: #0f172a;
+}
+QCalendarWidget QWidget#qt_calendar_navigationbar {
+    background: #ffffff;
+    border: 1px solid #dbe5f1;
+    border-bottom: none;
+}
+QCalendarWidget QToolButton {
+    background: #ffffff;
+    color: #0f172a;
+    border: 1px solid #dbe5f1;
+    border-radius: 6px;
+    padding: 4px 8px;
+}
+QCalendarWidget QToolButton:hover {
+    background: #f8fafc;
+    border-color: #bfdbfe;
+}
+QCalendarWidget QMenu {
+    background: #ffffff;
+    color: #0f172a;
+    border: 1px solid #bfdbfe;
+}
+QCalendarWidget QSpinBox {
+    background: #ffffff;
+    color: #0f172a;
+    border: 1px solid #dbe5f1;
+    border-radius: 6px;
+    padding: 2px 6px;
+}
+QCalendarWidget QAbstractItemView:enabled {
+    background: #ffffff;
+    color: #0f172a;
+    selection-background-color: #eff6ff;
+    selection-color: #0f172a;
+    alternate-background-color: #f8fafc;
+    border: 1px solid #dbe5f1;
+}
 QComboBox::drop-down {
     border: none;
     width: 28px;

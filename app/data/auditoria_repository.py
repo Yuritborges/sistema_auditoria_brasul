@@ -17,6 +17,7 @@ class AuditoriaRepository:
                 SELECT
                     p.numero,
                     p.data_pedido,
+                    p.emitido_em,
                     p.obra_nome,
                     p.fornecedor_nome,
                     p.empresa_faturadora,
@@ -29,7 +30,7 @@ class AuditoriaRepository:
                 FROM pedidos p
                 LEFT JOIN itens_pedido i ON i.pedido_id = p.id
                 GROUP BY
-                    p.id, p.numero, p.data_pedido, p.obra_nome, p.fornecedor_nome,
+                    p.id, p.numero, p.data_pedido, p.emitido_em, p.obra_nome, p.fornecedor_nome,
                     p.empresa_faturadora, p.condicao_pagamento, p.forma_pagamento,
                     p.valor_total, p.caminho_pdf, p.comprador
                 ORDER BY p.emitido_em DESC, p.id DESC

@@ -1,2 +1,4 @@
 # Fixar a versão após validar no ambiente: pip install "PySide6==6.8.2"
 PySide6>=6.6.0
+reportlab>=4.0.0
+pytest>=8.0.0

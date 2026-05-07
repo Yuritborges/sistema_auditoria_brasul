@@ -4,6 +4,7 @@ import re
 import json
 import csv
 import sqlite3
+import logging
 
 from app.config import (
     BASE_DIR,
@@ -21,22 +22,37 @@ class AuditoriaService:
     _pdf_index = None
 
     def __init__(self):
+        self.logger = logging.getLogger(__name__)
         self.audit_store = AuditStore(BASE_DIR)
         self._cache_dados = None
         self._cache_origem = ""
+        self._cache_db_path = ""
+        self._cache_db_mtime = None
         self._pdf_exists_cache = {}
         self._summary_cache = {}
         self._data_version = 0
         self._pdf_full_index_loaded = False
 
-    def carregar(self, force=False):
-        if not force and self._cache_dados is not None:
-            return [dict(item) for item in self._cache_dados], self._cache_origem
-        if force:
-            self._pdf_exists_cache = {}
-            self._summary_cache = {}
+    def _cache_still_valid(self, db_path):
+        """Evita reler o SQLite sem necessidade, mas detecta consolidacao (mtime do .db)."""
+        if not db_path:
+            return True
+        if not os.path.isfile(db_path):
+            return False
+        try:
+            mtime = os.path.getmtime(db_path)
+            return db_path == self._cache_db_path and mtime == self._cache_db_mtime
+        except OSError:
+            return False
 
+    def carregar(self, force=False):
         db_path = resolve_db_path()
+        if not force and self._cache_dados is not None and self._cache_still_valid(db_path):
+            return [dict(item) for item in self._cache_dados], self._cache_origem
+
+        self._pdf_exists_cache = {}
+        self._summary_cache = {}
+
         if db_path:
             repo = AuditoriaRepository(db_path)
             dados = repo.listar_pedidos()
@@ -57,11 +73,21 @@ class AuditoriaService:
         self._cache_origem = origem
         self._data_version += 1
         self._summary_cache = {}
+        if db_path and os.path.isfile(db_path):
+            try:
+                self._cache_db_path = db_path
+                self._cache_db_mtime = os.path.getmtime(db_path)
+            except OSError:
+                self._cache_db_path = db_path
+                self._cache_db_mtime = None
+        else:
+            self._cache_db_path = ""
+            self._cache_db_mtime = None
         return [dict(item) for item in dados], origem
 
     def _enriquecer_item(self, item):
         item["_valor_total_float"] = float(item.get("valor_total") or 0)
-        item["_data_ord"] = self._parse_data_pedido(item.get("data_pedido") or "")
+        item["_data_ord"] = self._data_referencia_pedido(item)
         item["origem"] = (item.get("comprador") or "").strip().upper()
         item["pdf_rede"] = self._resolver_pdf(item)
         if getattr(self, "_bulk_pdf_resolve", False):
@@ -72,14 +98,74 @@ class AuditoriaService:
         item["status_auditoria"] = self._status_auditoria(item)
         item["itens_lista"] = self._normalizar_itens(item.get("itens_texto") or "")
 
-    def _parse_data_pedido(self, texto):
-        txt = texto or ""
-        for fmt in ("%d/%m/%Y", "%d/%m/%y"):
+    def _data_referencia_pedido(self, item):
+        """Data para ordenacao e KPIs: data_pedido exibida; se invalida, usa emitido_em do banco."""
+        dt = self._parse_data_bruta(item.get("data_pedido") or "")
+        if dt != datetime.min:
+            return dt
+        return self._parse_emitido_em(item.get("emitido_em"))
+
+    def _parse_data_bruta(self, texto):
+        """Parse flexivel: brasileiro DD/MM/AAAA ou ISO (como gravado pelo SQLite/pedidos)."""
+        txt = (texto or "").strip()
+        if not txt:
+            return datetime.min
+        fmts = (
+            "%d/%m/%Y",
+            "%d/%m/%y",
+            "%Y-%m-%d",
+            "%Y-%m-%d %H:%M:%S",
+            "%Y-%m-%d %H:%M:%S.%f",
+            "%Y-%m-%dT%H:%M:%S",
+            "%Y-%m-%dT%H:%M:%S.%f",
+        )
+        for fmt in fmts:
             try:
                 return datetime.strptime(txt, fmt)
             except Exception:
                 pass
-        return datetime.min
+        if len(txt) >= 10 and txt[4] == "-" and txt[7] == "-":
+            try:
+                return datetime.strptime(txt[:10], "%Y-%m-%d")
+            except Exception:
+                pass
+        try:
+            return datetime.fromisoformat(txt.replace("Z", "+00:00"))
+        except Exception:
+            return datetime.min
+
+    def _parse_emitido_em(self, raw):
+        if raw is None:
+            return datetime.min
+        if isinstance(raw, datetime):
+            return raw
+        if isinstance(raw, (int, float)):
+            return self._from_unix_ts(raw)
+        s = str(raw).strip()
+        if not s:
+            return datetime.min
+        d = self._parse_data_bruta(s)
+        if d != datetime.min:
+            return d
+        try:
+            n = float(s)
+            return self._from_unix_ts(n)
+        except Exception:
+            return datetime.min
+
+    def _from_unix_ts(self, n):
+        try:
+            v = float(n)
+            if v > 1e12:
+                v = v / 1000.0
+            if v <= 0:
+                return datetime.min
+            return datetime.fromtimestamp(v)
+        except Exception:
+            return datetime.min
+
+    def _parse_data_pedido(self, texto):
+        return self._parse_data_bruta(texto or "")
 
     def _pdf_path_exists(self, caminho):
         path = (caminho or "").strip()
@@ -345,7 +431,7 @@ class AuditoriaService:
                 # Não validar paths aqui: um único load + milhares de exists na rede travava a abertura por minutos.
                 return {str(k): str(v).strip() for k, v in data.items() if isinstance(v, str) and str(v).strip()}
         except Exception:
-            pass
+            self.logger.exception("Falha ao carregar índice de PDF")
         return {}
 
     def _salvar_indice_cache(self, indice):
@@ -354,7 +440,7 @@ class AuditoriaService:
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(indice, f, ensure_ascii=False)
         except Exception:
-            pass
+            self.logger.exception("Falha ao salvar índice de PDF")
 
     def _dados_demo(self):
         return [
@@ -618,6 +704,7 @@ class AuditoriaService:
                 return set()
             return {k.strip() for k in data.keys() if isinstance(k, str) and k.strip()}
         except Exception:
+            self.logger.exception("Falha ao ler obras.json")
             return set()
 
     def _carregar_orcamentos_base_pedidos(self):
@@ -642,7 +729,7 @@ class AuditoriaService:
                     if nome:
                         obras.add(nome)
             except Exception:
-                pass
+                self.logger.exception("Falha lendo obras do db principal")
 
             # Obras efetivamente usadas em pedidos.
             try:
@@ -652,7 +739,7 @@ class AuditoriaService:
                     if nome:
                         obras.add(nome)
             except Exception:
-                pass
+                self.logger.exception("Falha lendo obras de pedidos")
 
             # Se existir tabela de orçamento no banco principal no futuro, já suporta.
             tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
@@ -665,7 +752,7 @@ class AuditoriaService:
                             previstos[obra] = float(r["valor_previsto"] or 0)
                             obras.add(obra)
                 except Exception:
-                    pass
+                    self.logger.exception("Falha lendo orçamentos do db principal")
         finally:
             conn.close()
 
@@ -710,6 +797,10 @@ class AuditoriaService:
 
     def listar_usuarios(self):
         users = self.audit_store.list_users()
+        if not users:
+            # Bootstrap mínimo: garante usuário ADMIN local para primeiro acesso.
+            self.audit_store.upsert_user("ADMIN", "ADMIN", True)
+            users = self.audit_store.list_users()
         # Migração de legado: usuário/perfil antigo PATRAO -> ADMIN.
         has_admin = any((u.get("nome") or "").strip().upper() == "ADMIN" for u in users)
         for u in users:
@@ -740,7 +831,14 @@ class AuditoriaService:
         return self.audit_store.user_has_password(nome)
 
     def definir_senha_usuario(self, nome, senha, operador="SISTEMA"):
-        self.audit_store.set_user_password(nome, senha)
+        nome_norm = (nome or "").strip().upper()
+        users = self.listar_usuarios()
+        row = next((u for u in users if (u.get("nome") or "").strip().upper() == nome_norm), None)
+        if row is None:
+            perfil = "ADMIN" if nome_norm == "ADMIN" and not self.existe_admin() else "COMPRADOR"
+            self.audit_store.upsert_user(nome_norm, perfil, True, senha=senha)
+        else:
+            self.audit_store.set_user_password(nome_norm, senha)
         self.audit_store.log("usuarios", nome, "SET_PASSWORD", "senha_hash", "", "***", operador)
 
     def remover_usuario(self, nome, operador, operador_perfil):
@@ -760,6 +858,250 @@ class AuditoriaService:
         self.audit_store.delete_user(alvo)
         self.audit_store.log("usuarios", alvo, "DELETE", "", "", "", operador)
         return True, "Usuário removido com sucesso."
+
+    # ---------- contratos ----------
+    def listar_contratos(self):
+        contratos = self.audit_store.list_contracts()
+        add_by_contract = {}
+        for ad in self.audit_store.list_addenda():
+            cid = int(ad.get("contrato_id") or 0)
+            add_by_contract[cid] = add_by_contract.get(cid, 0.0) + float(ad.get("valor") or 0)
+        for c in contratos:
+            base = float(c.get("valor_global") or 0)
+            acresc = add_by_contract.get(int(c.get("id") or 0), 0.0)
+            c["valor_atualizado"] = base + acresc
+        return contratos
+
+    def salvar_contrato(self, numero, obra, objeto, valor_global, prazo_inicio, prazo_fim, operador):
+        self.audit_store.upsert_contract(numero, obra, objeto, valor_global, prazo_inicio, prazo_fim)
+        self.audit_store.log("contratos", numero, "UPSERT", "valor_global", "", valor_global, operador)
+
+    def remover_contrato(self, contract_id, operador):
+        self.audit_store.delete_contract(contract_id)
+        self.audit_store.log("contratos", contract_id, "DELETE", "", "", "", operador)
+
+    def listar_aditivos(self, contrato_id=None):
+        return self.audit_store.list_addenda(contrato_id)
+
+    def salvar_aditivo(self, contrato_id, tipo, descricao, valor, prazo_dias, data_aditivo, operador):
+        self.audit_store.add_contract_addendum(contrato_id, tipo, descricao, valor, prazo_dias, data_aditivo)
+        self.audit_store.log("aditivos_contrato", contrato_id, "UPSERT", "valor", "", valor, operador)
+
+    # ---------- medições ----------
+    def listar_medicoes(self, contrato_id=None):
+        return self.audit_store.list_medicoes(contrato_id)
+
+    def salvar_medicao(self, contrato_id, obra, competencia, percentual_fisico, valor_medido, responsavel, observacoes, operador):
+        self.audit_store.upsert_medicao(
+            contrato_id,
+            obra,
+            competencia,
+            percentual_fisico,
+            valor_medido,
+            responsavel,
+            observacoes,
+        )
+        self.audit_store.log("medicoes", f"{contrato_id}:{competencia}", "UPSERT", "valor_medido", "", valor_medido, operador)
+
+    def resumo_fisico_financeiro(self):
+        contratos = self.listar_contratos()
+        by_id = {int(c.get("id") or 0): c for c in contratos}
+        out = []
+        for m in self.listar_medicoes():
+            cid = int(m.get("contrato_id") or 0)
+            contrato = by_id.get(cid, {})
+            valor_contrato = float(contrato.get("valor_atualizado") or contrato.get("valor_global") or 0)
+            valor_medido = float(m.get("valor_medido") or 0)
+            perc_fin = (valor_medido / valor_contrato * 100) if valor_contrato else 0
+            out.append(
+                {
+                    **m,
+                    "contrato_numero": contrato.get("numero", ""),
+                    "valor_contrato": valor_contrato,
+                    "percentual_financeiro": perc_fin,
+                    "gap_fisico_financeiro": float(m.get("percentual_fisico") or 0) - perc_fin,
+                }
+            )
+        return out
+
+    # ---------- notas fiscais / conciliação ----------
+    def listar_notas_fiscais(self):
+        return self.audit_store.list_notas_fiscais()
+
+    def salvar_nota_fiscal(
+        self,
+        numero_nf,
+        pedido_numero,
+        contrato_id,
+        obra,
+        fornecedor,
+        valor,
+        data_emissao,
+        status_conciliacao,
+        justificativa,
+        operador,
+    ):
+        self.audit_store.upsert_nota_fiscal(
+            numero_nf,
+            pedido_numero,
+            contrato_id,
+            obra,
+            fornecedor,
+            valor,
+            data_emissao,
+            status_conciliacao,
+            justificativa,
+        )
+        self.audit_store.log("notas_fiscais", numero_nf, "UPSERT", "valor", "", valor, operador)
+
+    def conciliar_nf_pedidos_medicoes(self, dados_pedidos):
+        pedidos_by_num = {str(p.get("numero") or "").strip(): p for p in (dados_pedidos or [])}
+        med_by_contract = {}
+        for m in self.listar_medicoes():
+            cid = int(m.get("contrato_id") or 0)
+            med_by_contract[cid] = med_by_contract.get(cid, 0.0) + float(m.get("valor_medido") or 0)
+        divergencias = []
+        for nf in self.listar_notas_fiscais():
+            flags = []
+            pedido_num = str(nf.get("pedido_numero") or "").strip()
+            valor_nf = float(nf.get("valor") or 0)
+            pedido = pedidos_by_num.get(pedido_num)
+            if not pedido:
+                flags.append("PEDIDO_NAO_ENCONTRADO")
+            else:
+                if abs(float(pedido.get("valor_total") or 0) - valor_nf) > 0.01:
+                    flags.append("VALOR_DIVERGENTE_PEDIDO")
+                forn_nf = (nf.get("fornecedor") or "").strip().upper()
+                forn_p = (pedido.get("fornecedor_nome") or "").strip().upper()
+                if forn_nf and forn_p and forn_nf != forn_p:
+                    flags.append("FORNECEDOR_DIVERGENTE")
+            cid = int(nf.get("contrato_id") or 0)
+            if cid and valor_nf > med_by_contract.get(cid, 0.0):
+                flags.append("VALOR_NF_ACIMA_MEDIDO")
+            divergencias.append(
+                {
+                    **nf,
+                    "flags": flags,
+                    "status": "DIVERGENTE" if flags else "OK",
+                }
+            )
+        return divergencias
+
+    # ---------- sinapi ----------
+    def importar_sinapi_csv(self, csv_path, competencia, uf="SP"):
+        total = 0
+        self.audit_store.clear_sinapi_competencia(competencia, uf)
+        with open(csv_path, "r", encoding="utf-8-sig", newline="") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                codigo = (row.get("codigo") or row.get("CODIGO") or row.get("insumo") or "").strip()
+                descricao = (row.get("descricao") or row.get("DESCRICAO") or "").strip()
+                unidade = (row.get("unidade") or row.get("UNIDADE") or "").strip()
+                preco_raw = (
+                    row.get("preco")
+                    or row.get("PRECO")
+                    or row.get("preco_referencia")
+                    or row.get("VALOR")
+                    or "0"
+                )
+                preco = float(str(preco_raw).replace(".", "").replace(",", "."))
+                if not codigo:
+                    continue
+                self.audit_store.upsert_sinapi(competencia, codigo, descricao, unidade, preco, uf)
+                total += 1
+        return total
+
+    def listar_sinapi(self, competencia=None, uf="SP"):
+        return self.audit_store.list_sinapi(competencia, uf)
+
+    def comparar_itens_com_sinapi(self, dados_pedidos, competencia, uf="SP"):
+        sinapi = self.audit_store.list_sinapi(competencia, uf)
+        by_code = {str(r.get("codigo") or "").strip().upper(): r for r in sinapi}
+        rows = []
+        for p in (dados_pedidos or []):
+            itens = p.get("itens_lista") or []
+            valor_total = float(p.get("valor_total") or 0)
+            valor_item = (valor_total / len(itens)) if itens else 0
+            for it in itens:
+                code = re.sub(r"\D+", "", it).upper()
+                ref = by_code.get(code)
+                if not ref:
+                    continue
+                preco_ref = float(ref.get("preco") or 0)
+                variacao = ((valor_item - preco_ref) / preco_ref * 100) if preco_ref else 0
+                rows.append(
+                    {
+                        "pedido": p.get("numero") or "",
+                        "item": it,
+                        "codigo_sinapi": code,
+                        "preco_item_estimado": valor_item,
+                        "preco_sinapi": preco_ref,
+                        "variacao_percentual": variacao,
+                        "alerta": "ALTO_DESVIO" if abs(variacao) > 25 else "OK",
+                    }
+                )
+        return rows
+
+    # ---------- fiscalização ----------
+    def listar_vistorias(self):
+        return self.audit_store.list_vistorias()
+
+    def salvar_vistoria(self, obra, contrato_id, data_vistoria, responsavel, resumo, status, operador):
+        vid = self.audit_store.add_vistoria(obra, contrato_id, data_vistoria, responsavel, resumo, status)
+        self.audit_store.log("vistorias", vid, "UPSERT", "status", "", status, operador)
+        return vid
+
+    def listar_rncs(self):
+        return self.audit_store.list_rncs()
+
+    def salvar_rnc(self, vistoria_id, obra, descricao, prazo_solucao, acao_corretiva, operador):
+        rid = self.audit_store.add_rnc(vistoria_id, obra, descricao, prazo_solucao, acao_corretiva)
+        self.audit_store.log("rnc", rid, "UPSERT", "status", "", "ABERTA", operador)
+        return rid
+
+    def atualizar_rnc_status(self, rnc_id, status, acao_corretiva, operador):
+        resolvida_em = datetime.now().strftime("%d/%m/%Y") if (status or "").strip().upper() == "RESOLVIDA" else ""
+        self.audit_store.set_rnc_status(rnc_id, status, acao_corretiva, resolvida_em)
+        self.audit_store.log("rnc", rnc_id, "STATUS", "status", "", status, operador)
+
+    def anexar_rnc(self, rnc_id, caminho_arquivo, tipo, operador):
+        self.audit_store.add_rnc_anexo(rnc_id, caminho_arquivo, tipo)
+        self.audit_store.log("rnc_anexos", rnc_id, "ADD", "arquivo", "", caminho_arquivo, operador)
+
+    def listar_rnc_anexos(self, rnc_id=None):
+        return self.audit_store.list_rnc_anexos(rnc_id)
+
+    # ---------- relatório mensal ----------
+    def gerar_relatorio_mensal_pdf(self, caminho_arquivo, periodo_ini, periodo_fim, dados):
+        try:
+            from reportlab.lib.pagesizes import A4
+            from reportlab.pdfgen import canvas
+        except Exception as exc:
+            raise RuntimeError("Dependência reportlab não instalada. Execute: pip install reportlab") from exc
+
+        c = canvas.Canvas(caminho_arquivo, pagesize=A4)
+        width, height = A4
+        y = height - 40
+        c.setFont("Helvetica-Bold", 14)
+        c.drawString(40, y, "Relatório Mensal de Auditoria")
+        y -= 20
+        c.setFont("Helvetica", 10)
+        c.drawString(40, y, f"Período: {periodo_ini} a {periodo_fim}")
+        y -= 20
+        resumo = self.dashboard_summary(dados)
+        c.drawString(40, y, f"Total ano: R$ {resumo['total_ano']:.2f} | Pendentes: {resumo['pendentes']} | Sem PDF: {resumo['sem_pdf']}")
+        y -= 25
+        c.setFont("Helvetica-Bold", 11)
+        c.drawString(40, y, "Top obras")
+        y -= 16
+        c.setFont("Helvetica", 10)
+        for obra, valor in resumo.get("top_obras", [])[:10]:
+            c.drawString(48, y, f"- {obra}: R$ {valor:.2f}")
+            y -= 14
+            if y < 80:
+                c.showPage()
+                y = height - 40
+        c.save()
 
     def exportar_csv(self, caminho_arquivo, colunas, linhas):
         os.makedirs(os.path.dirname(caminho_arquivo), exist_ok=True)

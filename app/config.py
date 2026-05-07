@@ -1,7 +1,15 @@
 import os
+import sys
 
 
-BASE_DIR = os.path.dirname(os.path.dirname(__file__))
+def _resolve_base_dir():
+    # No .exe (PyInstaller), gravar dados ao lado do executável (persistente), não em pasta temporária.
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.dirname(__file__))
+
+
+BASE_DIR = _resolve_base_dir()
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 LOGOS_DIR = os.path.join(ASSETS_DIR, "logos")
 

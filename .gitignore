@@ -25,6 +25,8 @@ database/*.db
 # Build / empacotamento
 build/
 dist/
+current/
+releases/
 *.spec
 *.egg-info/
 

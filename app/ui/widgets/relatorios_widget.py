@@ -50,6 +50,7 @@ class RelatoriosWidget(QWidget):
             ("Por fornecedor", self._exportar_fornecedores),
             ("Mensal", self._exportar_mensal),
             ("Curva ABC", self._exportar_abc),
+            ("Relatório mensal PDF", self._exportar_mensal_pdf),
         ]
         for i, (txt, fn) in enumerate(actions):
             b = QPushButton(txt)
@@ -69,6 +70,10 @@ class RelatoriosWidget(QWidget):
 
     def _pick_path(self, sug):
         path, _ = QFileDialog.getSaveFileName(self, "Salvar relatório", sug, "CSV (*.csv)")
+        return path
+
+    def _pick_pdf_path(self, sug):
+        path, _ = QFileDialog.getSaveFileName(self, "Salvar relatório mensal", sug, "PDF (*.pdf)")
         return path
 
     def _exportar_obras(self):
@@ -97,6 +102,17 @@ class RelatoriosWidget(QWidget):
             cls = "A" if acum <= 80 else ("B" if acum <= 95 else "C")
             linhas.append({"item": item, "qtd": qtd, "perc": round(perc, 2), "classe": cls})
         self._save("relatorio_curva_abc", ["item", "qtd", "perc", "classe"], linhas)
+
+    def _exportar_mensal_pdf(self):
+        sugestao = os.path.join(os.getcwd(), f"relatorio_mensal_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf")
+        path = self._pick_pdf_path(sugestao)
+        if not path:
+            return
+        try:
+            self.service.gerar_relatorio_mensal_pdf(path, "01/01/2026", datetime.now().strftime("%d/%m/%Y"), self._dados)
+            self.lbl.setText(f"PDF gerado: {path}")
+        except Exception as e:
+            QMessageBox.critical(self, "Erro", f"Falha ao gerar PDF mensal.\n\n{e}")
 
     def _save(self, nome, colunas, linhas):
         sugestao = os.path.join(os.getcwd(), f"{nome}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv")

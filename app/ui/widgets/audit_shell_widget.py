@@ -2,6 +2,7 @@ import os
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
+    QApplication,
     QDialog,
     QFrame,
     QHBoxLayout,
@@ -19,10 +20,13 @@ from app.core.auth import PERMISSIONS_BY_PROFILE, can_access, normalize_profile
 from app.ui.branding import logo_label_compact, logo_label_sidebar
 from app.ui.style import APP_STYLESHEET
 from app.ui.widgets.auditoria_widget import AuditoriaWidget
+from app.ui.widgets.conciliacao_widget import ConciliacaoWidget
+from app.ui.widgets.contratos_widget import ContratosWidget
 from app.ui.widgets.dashboard_widget import DashboardWidget
+from app.ui.widgets.fiscalizacao_widget import FiscalizacaoWidget
 from app.ui.widgets.fornecedores_widget import FornecedoresWidget
 from app.ui.widgets.itens_widget import ItensWidget
-from app.ui.widgets.locacoes_widget import LocacoesWidget
+from app.ui.widgets.medicoes_widget import MedicoesWidget
 from app.ui.widgets.obras_widget import ObrasWidget
 from app.ui.widgets.orcamentos_widget import OrcamentosWidget
 from app.ui.widgets.pedidos_widget import PedidosWidget
@@ -32,16 +36,20 @@ from app.ui.widgets.usuarios_widget import UsuariosWidget
 
 
 class AuditShellWidget(QWidget):
+    AUTO_RELOAD_MS = 30_000
     MODULES = [
         ("dashboard", "Dashboard Geral"),
         ("obras", "Obras"),
         ("pedidos", "Pedidos"),
         ("itens", "Itens/Materiais"),
         ("fornecedores", "Fornecedores"),
-        ("locacoes", "Locações"),
         ("orcamentos", "Orçamentos"),
         ("relatorios", "Relatórios"),
         ("auditoria", "Auditoria/Histórico"),
+        ("contratos", "Contratos"),
+        ("medicoes", "Medições"),
+        ("conciliacao", "Conciliação"),
+        ("fiscalizacao", "Fiscalização"),
         ("configuracoes", "Configurações"),
     ]
 
@@ -52,30 +60,40 @@ class AuditShellWidget(QWidget):
         self._widget_data_version = {}
         self._data_version = 0
 
-        # Sessão via variáveis de ambiente (atalho para .bat / integração futura).
-        raw_prof = (os.environ.get("AUDITORIA_PERFIL") or "ADMIN").strip().upper()
+        # Sessão sempre exige autenticação por diálogo (sem bypass automático por ambiente).
+        raw_prof = (os.environ.get("AUDITORIA_PERFIL") or "COMPRADOR").strip().upper()
         self.profile = normalize_profile(raw_prof)
         if self.profile not in PERMISSIONS_BY_PROFILE:
             self.profile = "COMPRADOR"
-        raw_user = (os.environ.get("AUDITORIA_USUARIO") or "").strip().upper()
+        raw_user = ""
         self.current_user = raw_user or self.profile
-        if not raw_user:
-            self._ask_session_user()
+        if not self._ask_session_user():
+            QTimer.singleShot(0, self._quit_app)
+            return
         self._build()
+        self._auto_reload_timer = QTimer(self)
+        self._auto_reload_timer.setInterval(self.AUTO_RELOAD_MS)
+        self._auto_reload_timer.timeout.connect(self._auto_recarregar)
+        self._auto_reload_timer.start()
         QTimer.singleShot(0, lambda: self.recarregar(force=False))
 
     def _ask_session_user(self):
         try:
             users = self.service.listar_usuarios()
-            dlg = UserSessionDialog(self.service, users, self)
-            if dlg.exec() == QDialog.Accepted:
-                user, profile = dlg.selected()
-                self.current_user = user
-                self.profile = normalize_profile(profile)
+            dlg = UserSessionDialog(self.service, users, None)
+            if dlg.exec() != QDialog.Accepted:
+                return False
+            user, profile = dlg.selected()
+            self.current_user = user
+            self.profile = normalize_profile(profile)
+            return True
         except Exception:
-            # Fallback silencioso para não bloquear abertura do app.
-            self.current_user = self.current_user or "ADMIN"
-            self.profile = normalize_profile(self.profile or "ADMIN")
+            return False
+
+    def _quit_app(self):
+        app = QApplication.instance()
+        if app:
+            app.quit()
 
     def _build(self):
         self.setStyleSheet(APP_STYLESHEET)
@@ -181,10 +199,13 @@ class AuditShellWidget(QWidget):
             "pedidos": lambda: PedidosWidget(self.service),
             "itens": lambda: ItensWidget(self.service),
             "fornecedores": lambda: FornecedoresWidget(self.service),
-            "locacoes": lambda: LocacoesWidget(),
             "orcamentos": lambda: OrcamentosWidget(self.service, self._usuario),
             "relatorios": lambda: RelatoriosWidget(self.service),
             "auditoria": lambda: AuditoriaWidget(self.service),
+            "contratos": lambda: ContratosWidget(self.service, self._usuario),
+            "medicoes": lambda: MedicoesWidget(self.service, self._usuario),
+            "conciliacao": lambda: ConciliacaoWidget(self.service, self._usuario),
+            "fiscalizacao": lambda: FiscalizacaoWidget(self.service, self._usuario),
             "configuracoes": lambda: UsuariosWidget(self.service, self._usuario, self._perfil),
         }
         self.widgets_map = {}
@@ -270,3 +291,7 @@ class AuditShellWidget(QWidget):
             label = self.menu.item(idx).text()
             self.lbl_subtitle.setText(f"Módulo ativo · {label}")
             self._push_data_to_current_widget()
+
+    def _auto_recarregar(self):
+        # Atualização periódica silenciosa para refletir novas consolidações da base.
+        self.recarregar(force=False)

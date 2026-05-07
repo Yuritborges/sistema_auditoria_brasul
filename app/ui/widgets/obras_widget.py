@@ -3,7 +3,6 @@ from typing import Optional
 
 from PySide6.QtCore import QDate, Qt
 from PySide6.QtWidgets import (
-    QDateEdit,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -17,6 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.ui.widgets.brasul_combo import BrasulComboBox
+from app.ui.widgets.brasul_date_edit import BrasulDateEdit
 
 
 class ObrasWidget(QWidget):
@@ -58,13 +58,11 @@ class ObrasWidget(QWidget):
 
         today = QDate.currentDate()
         jan1 = QDate(today.year(), 1, 1)
-        self.dt_ini = QDateEdit()
-        self.dt_ini.setCalendarPopup(True)
+        self.dt_ini = BrasulDateEdit()
         self.dt_ini.setDisplayFormat("dd/MM/yyyy")
         self.dt_ini.setDate(jan1)
         self.dt_ini.setMaximumDate(today)
-        self.dt_fim = QDateEdit()
-        self.dt_fim.setCalendarPopup(True)
+        self.dt_fim = BrasulDateEdit()
         self.dt_fim.setDisplayFormat("dd/MM/yyyy")
         self.dt_fim.setDate(today)
         self.dt_fim.setMaximumDate(today)

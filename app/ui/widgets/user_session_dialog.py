@@ -1,8 +1,6 @@
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QCheckBox,
     QDialog,
-    QFormLayout,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -12,8 +10,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from app.core.auth import assignable_profiles, normalize_profile
-from app.ui.widgets.brasul_combo import BrasulComboBox
+from app.core.auth import normalize_profile
 from app.ui.branding import scaled_logo_pixmap
 from app.ui.style import APP_STYLESHEET
 
@@ -24,13 +21,14 @@ class UserSessionDialog(QDialog):
         self.service = service
         self.setObjectName("loginDialog")
         self.setWindowTitle("Acesso ao Sistema")
+        # Janela top-level para aparecer na barra de tarefas do Windows.
+        self.setWindowFlag(Qt.Window, True)
         self.setModal(True)
         self.setMinimumWidth(560)
         self.setStyleSheet(APP_STYLESHEET)
         self._users = users or []
         self._logged_user = ""
         self._logged_profile = "COMPRADOR"
-        self._mode_new_user = False
         self._build()
 
     def _build(self):
@@ -71,61 +69,19 @@ class UserSessionDialog(QDialog):
         self.ed_password.setEchoMode(QLineEdit.Password)
         self.ed_password.setPlaceholderText("Senha")
         self.ed_password.returnPressed.connect(self._accept_login)
-        self.ed_password.textChanged.connect(self._reload_new_profile_options)
         card_l.addWidget(self.ed_password)
 
         self.lbl_selected = QLabel("Usuário selecionado: -")
         self.lbl_selected.setObjectName("muted")
         card_l.addWidget(self.lbl_selected)
 
-        self.form_new = QFrame()
-        self.form_new.setObjectName("panelCard")
-        fn_l = QVBoxLayout(self.form_new)
-        fn_l.setContentsMargins(14, 12, 14, 12)
-        fn_l.setSpacing(10)
-        fn_title = QLabel("Novo usuário")
-        fn_title.setObjectName("sectionTitle")
-        fn_l.addWidget(fn_title)
-        form = QFormLayout()
-        self.ed_new_user = QLineEdit()
-        self.ed_new_user.setPlaceholderText("Nome do usuário")
-        self.cb_new_profile = BrasulComboBox()
-        self.ed_new_password = QLineEdit()
-        self.ed_new_password.setEchoMode(QLineEdit.Password)
-        self.ed_new_password.setPlaceholderText("Senha")
-        self.ed_new_password2 = QLineEdit()
-        self.ed_new_password2.setEchoMode(QLineEdit.Password)
-        self.ed_new_password2.setPlaceholderText("Confirmar senha")
-        self.ck_new_active = QCheckBox("Ativo")
-        self.ck_new_active.setChecked(True)
-        form.addRow("Usuário", self.ed_new_user)
-        form.addRow("Perfil", self.cb_new_profile)
-        form.addRow("Senha", self.ed_new_password)
-        form.addRow("Confirmar", self.ed_new_password2)
-        form.addRow("", self.ck_new_active)
-        fn_l.addLayout(form)
-        fn_btns = QHBoxLayout()
-        fn_btns.addStretch()
-        self.btn_save_new = QPushButton("Salvar usuário")
-        self.btn_save_new.clicked.connect(self._register_user)
-        self.btn_cancel_new = QPushButton("Fechar cadastro")
-        self.btn_cancel_new.setObjectName("secondaryButton")
-        self.btn_cancel_new.clicked.connect(self._toggle_new_user_form)
-        fn_btns.addWidget(self.btn_cancel_new)
-        fn_btns.addWidget(self.btn_save_new)
-        fn_l.addLayout(fn_btns)
-        self.form_new.hide()
-        card_l.addWidget(self.form_new)
-
         row_actions = QHBoxLayout()
-        self.btn_new = QPushButton("+ Novo usuário")
-        self.btn_new.clicked.connect(self._toggle_new_user_form)
         self.btn_cancel = QPushButton("Cancelar")
         self.btn_cancel.setObjectName("secondaryButton")
         self.btn_cancel.clicked.connect(self.reject)
         self.btn_enter = QPushButton("Entrar")
         self.btn_enter.clicked.connect(self._accept_login)
-        row_actions.addWidget(self.btn_new)
+        row_actions.addStretch()
         row_actions.addWidget(self.btn_cancel)
         row_actions.addWidget(self.btn_enter)
         card_l.addLayout(row_actions)
@@ -133,13 +89,6 @@ class UserSessionDialog(QDialog):
         root.addWidget(card)
 
         self._reload_users()
-        self._reload_new_profile_options()
-
-    def _toggle_new_user_form(self):
-        self._mode_new_user = not self._mode_new_user
-        self.form_new.setVisible(self._mode_new_user)
-        if self._mode_new_user:
-            self._reload_new_profile_options()
 
     def _reload_users(self):
         self._users = self.service.listar_usuarios()
@@ -149,82 +98,30 @@ class UserSessionDialog(QDialog):
             if w:
                 w.deleteLater()
 
+        first_active = None
         for user in self._users:
             nome = (user.get("nome") or "").strip().upper()
             perfil = normalize_profile(user.get("perfil") or "COMPRADOR")
             ativo = int(user.get("ativo", 1)) == 1
             if not nome or not ativo:
                 continue
+            if first_active is None:
+                first_active = (nome, perfil)
             btn = QPushButton(nome.title())
             btn.setObjectName("userTileButton")
             btn.clicked.connect(lambda _=False, n=nome, p=perfil: self._select_user(n, p))
             self.users_box.addWidget(btn)
 
-        if self.users_box.count() == 0:
+        if first_active is None:
             self._select_user("ADMIN", "ADMIN")
         else:
-            first = self._users[0]
-            self._select_user((first.get("nome") or "ADMIN").strip().upper(), normalize_profile(first.get("perfil") or "COMPRADOR"))
+            self._select_user(first_active[0], first_active[1])
 
     def _select_user(self, nome, perfil):
         self._logged_user = nome
         self._logged_profile = normalize_profile(perfil)
         self.lbl_selected.setText(f"Usuário selecionado: {nome.title()}  •  Perfil: {self._logged_profile}")
-        self._reload_new_profile_options()
         self.ed_password.setFocus()
-
-    def _reload_new_profile_options(self):
-        self.cb_new_profile.clear()
-        allow_admin = not self.service.existe_admin()
-        if self._is_logged_admin_authenticated():
-            allow_admin = True
-            operator_profile = "ADMIN"
-        else:
-            operator_profile = "COMPRADOR"
-        self.cb_new_profile.addItems(assignable_profiles(operator_profile, allow_admin=allow_admin))
-
-    def _is_logged_admin_authenticated(self):
-        if self._logged_profile != "ADMIN":
-            return False
-        senha = self.ed_password.text() or ""
-        if not senha:
-            return False
-        return self.service.autenticar_usuario(self._logged_user, senha)
-
-    def _register_user(self):
-        nome = self.ed_new_user.text().strip().upper()
-        if not nome:
-            QMessageBox.warning(self, "Usuário", "Informe o nome do usuário.")
-            return
-        senha = self.ed_new_password.text()
-        senha2 = self.ed_new_password2.text()
-        if not senha or len(senha) < 4:
-            QMessageBox.warning(self, "Senha", "A senha deve ter pelo menos 4 caracteres.")
-            return
-        if senha != senha2:
-            QMessageBox.warning(self, "Senha", "As senhas não conferem.")
-            return
-        perfil = normalize_profile(self.cb_new_profile.currentText())
-        ativo = self.ck_new_active.isChecked()
-
-        allow_admin_bootstrap = not self.service.existe_admin()
-        admin_auth = self._is_logged_admin_authenticated()
-        if not allow_admin_bootstrap and not admin_auth:
-            QMessageBox.warning(self, "Permissão", "Somente ADMIN autenticado pode cadastrar usuários.")
-            return
-        if perfil == "ADMIN" and not (allow_admin_bootstrap or admin_auth):
-            QMessageBox.warning(self, "Permissão", "Somente ADMIN autenticado pode cadastrar outro ADMIN.")
-            return
-
-        self.service.salvar_usuario_com_senha(nome, perfil, ativo, senha, self._logged_user or "SISTEMA")
-        self.ed_new_user.clear()
-        self.ed_new_password.clear()
-        self.ed_new_password2.clear()
-        self._reload_users()
-        self._reload_new_profile_options()
-        self._mode_new_user = False
-        self.form_new.hide()
-        QMessageBox.information(self, "Usuário", f"Usuário {nome.title()} cadastrado.")
 
     def _accept_login(self):
         if not self._logged_user:

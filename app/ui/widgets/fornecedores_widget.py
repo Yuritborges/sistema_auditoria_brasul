@@ -84,11 +84,17 @@ class FornecedoresWidget(QWidget):
         self._dados = dados
         fornecedores = sorted({(d.get("fornecedor_nome") or "").strip() for d in dados if (d.get("fornecedor_nome") or "").strip()})
         self.cb.clear()
+        self.cb.addItem("Selecione um fornecedor...")
         self.cb.addItems(fornecedores)
-        self._analisar()
+        self.lbl_stats.setText("Selecione um fornecedor e clique em Analisar.")
+        self.tbl.setRowCount(0)
 
     def _analisar(self):
         fornecedor = self.cb.currentText()
+        if not fornecedor or fornecedor == "Selecione um fornecedor...":
+            self.lbl_stats.setText("Selecione um fornecedor e clique em Analisar.")
+            self.tbl.setRowCount(0)
+            return
         res = self.service.fornecedor_auditoria(self._dados, fornecedor)
         self.lbl_stats.setText(
             f"Total: {self._fmt(res.get('total', 0))} | Pedidos: {res.get('qtd_pedidos', 0)} | "
