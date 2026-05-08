@@ -188,11 +188,36 @@ class ObrasWidget(QWidget):
         return None
 
     def set_data(self, dados):
+        obra_atual = (self.cb_obra.currentText() or "").strip()
+        fornecedor_atual = self.ed_fornecedor.text()
+        item_atual = self.ed_item.text()
+        comprador_atual = self.ed_comprador.text()
+        dt_ini_atual = self.dt_ini.date()
+        dt_fim_atual = self.dt_fim.date()
+
         self._dados = dados
         obras = sorted({(d.get("obra_nome") or "").strip() for d in dados if (d.get("obra_nome") or "").strip()})
+
         self.cb_obra.clear()
         self.cb_obra.addItem("TODAS")
         self.cb_obra.addItems(obras)
+
+        if obra_atual:
+            idx = self.cb_obra.findText(obra_atual, Qt.MatchFixedString | Qt.MatchCaseSensitive)
+            if idx < 0:
+                idx = self.cb_obra.findText(obra_atual, Qt.MatchFixedString | Qt.MatchCaseInsensitive)
+            if idx >= 0:
+                self.cb_obra.setCurrentIndex(idx)
+            else:
+                # Mantém o texto digitado sem resetar para "TODAS".
+                self.cb_obra.setEditText(obra_atual)
+
+        self.ed_fornecedor.setText(fornecedor_atual)
+        self.ed_item.setText(item_atual)
+        self.ed_comprador.setText(comprador_atual)
+        self.dt_ini.setDate(dt_ini_atual)
+        self.dt_fim.setDate(dt_fim_atual)
+        self._limitar_periodo()
         self._aplicar()
 
     def _aplicar(self):

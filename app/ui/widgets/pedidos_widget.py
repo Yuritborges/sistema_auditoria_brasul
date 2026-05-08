@@ -1,6 +1,7 @@
 import os
+from datetime import date, datetime
 
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import QDate, Qt, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QFrame,
@@ -17,6 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.ui.widgets.brasul_combo import BrasulComboBox
+from app.ui.widgets.brasul_date_edit import BrasulDateEdit
 
 PAGE_CHUNK = 300
 
@@ -61,6 +63,16 @@ class PedidosWidget(QWidget):
         self.ed_item.setPlaceholderText("Item / material…")
         self.ed_forn = QLineEdit()
         self.ed_forn.setPlaceholderText("Fornecedor…")
+        today = QDate.currentDate()
+        jan1 = QDate(today.year(), 1, 1)
+        self.dt_ini = BrasulDateEdit()
+        self.dt_ini.setDisplayFormat("dd/MM/yyyy")
+        self.dt_ini.setDate(jan1)
+        self.dt_ini.setMaximumDate(today)
+        self.dt_fim = BrasulDateEdit()
+        self.dt_fim.setDisplayFormat("dd/MM/yyyy")
+        self.dt_fim.setDate(today)
+        self.dt_fim.setMaximumDate(today)
 
         def _fl(text):
             lb = QLabel(text)
@@ -77,6 +89,15 @@ class PedidosWidget(QWidget):
         filtros.addWidget(self.ed_forn, 1, 1, 1, 2)
         filtros.addWidget(_fl("Item"), 1, 3)
         filtros.addWidget(self.ed_item, 1, 4, 1, 2)
+        filtros.addWidget(_fl("Período"), 2, 0)
+        per = QHBoxLayout()
+        per.setSpacing(8)
+        per.addWidget(self.dt_ini, 1)
+        per.addWidget(QLabel("até"))
+        per.addWidget(self.dt_fim, 1)
+        per_w = QWidget()
+        per_w.setLayout(per)
+        filtros.addWidget(per_w, 2, 1, 1, 3)
         btn_filtrar = QPushButton("Filtrar")
         btn_filtrar.clicked.connect(self.aplicar_filtros)
         btn_pdf = QPushButton("Buscar PDFs")
@@ -128,6 +149,12 @@ class PedidosWidget(QWidget):
         self.tbl.cellClicked.connect(self._on_pdf_cell_clicked)
 
     def set_data(self, dados):
+        comprador_atual = (self.cb_comprador.currentText() or "").strip()
+        obra_atual = (self.cb_obra.currentText() or "").strip()
+        status_atual = (self.cb_status.currentText() or "").strip()
+        fornecedor_atual = self.ed_forn.text()
+        item_atual = self.ed_item.text()
+
         self._dados = list(dados)
         compradores = sorted({(d.get("comprador") or "").strip() for d in dados if (d.get("comprador") or "").strip()})
         obras = sorted({(d.get("obra_nome") or "").strip() for d in dados if (d.get("obra_nome") or "").strip()})
@@ -137,6 +164,26 @@ class PedidosWidget(QWidget):
         self.cb_obra.addItem("TODAS")
         self.cb_comprador.addItems(compradores)
         self.cb_obra.addItems(obras)
+
+        if comprador_atual:
+            idx = self.cb_comprador.findText(comprador_atual, Qt.MatchFixedString | Qt.MatchCaseInsensitive)
+            if idx >= 0:
+                self.cb_comprador.setCurrentIndex(idx)
+            else:
+                self.cb_comprador.setEditText(comprador_atual)
+        if obra_atual:
+            idx = self.cb_obra.findText(obra_atual, Qt.MatchFixedString | Qt.MatchCaseInsensitive)
+            if idx >= 0:
+                self.cb_obra.setCurrentIndex(idx)
+            else:
+                self.cb_obra.setEditText(obra_atual)
+        if status_atual:
+            idx = self.cb_status.findText(status_atual, Qt.MatchFixedString | Qt.MatchCaseInsensitive)
+            if idx >= 0:
+                self.cb_status.setCurrentIndex(idx)
+
+        self.ed_forn.setText(fornecedor_atual)
+        self.ed_item.setText(item_atual)
         self.aplicar_filtros()
 
     def _carregar_mais_linhas(self):
@@ -150,6 +197,10 @@ class PedidosWidget(QWidget):
         status = self.cb_status.currentText().strip().upper()
         fornecedor = self.ed_forn.text().strip().upper()
         item = self.ed_item.text().strip().upper()
+        d_ini = self._qdate_to_date(self.dt_ini.date())
+        d_fim = self._qdate_to_date(self.dt_fim.date())
+        if d_ini > d_fim:
+            d_ini, d_fim = d_fim, d_ini
         self._filtrados = []
         for d in self._dados:
             if comprador != "TODOS" and comprador != (d.get("comprador") or "").strip().upper():
@@ -161,6 +212,9 @@ class PedidosWidget(QWidget):
             if fornecedor and fornecedor not in (d.get("fornecedor_nome") or "").upper():
                 continue
             if item and item not in (d.get("itens_texto") or "").upper():
+                continue
+            pd = self._pedido_data(d)
+            if pd is not None and (pd < d_ini or pd > d_fim):
                 continue
             self._filtrados.append(d)
         self._visible_rows = min(PAGE_CHUNK, len(self._filtrados)) if self._filtrados else 0
@@ -241,3 +295,20 @@ class PedidosWidget(QWidget):
 
     def _fmt(self, v):
         return f"R$ {float(v or 0):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+    @staticmethod
+    def _qdate_to_date(qd: QDate) -> date:
+        return date(qd.year(), qd.month(), qd.day())
+
+    @staticmethod
+    def _pedido_data(p):
+        dt = p.get("_data_ord")
+        if isinstance(dt, datetime):
+            return dt.date()
+        txt = (p.get("data_pedido") or "").strip()
+        for fmt in ("%d/%m/%Y", "%d/%m/%y"):
+            try:
+                return datetime.strptime(txt, fmt).date()
+            except Exception:
+                pass
+        return None

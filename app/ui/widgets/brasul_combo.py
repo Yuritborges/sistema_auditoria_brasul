@@ -4,9 +4,9 @@ O app usa QWidget { background: transparent } para cartões; o popup do combo é
 à parte e herdava transparência → fundo preto nativo. Forçamos paleta + QSS na árvore do popup.
 """
 
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QColor, QPalette
-from PySide6.QtWidgets import QComboBox, QWidget
+from PySide6.QtCore import QPoint, Qt, QTimer
+from PySide6.QtGui import QColor, QPainter, QPalette, QPolygon
+from PySide6.QtWidgets import QComboBox, QCompleter, QWidget
 
 
 def _popup_stylesheet():
@@ -96,10 +96,62 @@ def _paint_popup_branch(root: QWidget):
 
 
 class BrasulComboBox(QComboBox):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setEditable(True)
+        self.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self.setDuplicatesEnabled(False)
+        self.setMaxVisibleItems(20)
+
+        comp = QCompleter(self.model(), self)
+        comp.setCaseSensitivity(Qt.CaseInsensitive)
+        comp.setFilterMode(Qt.MatchContains)
+        comp.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+        self.setCompleter(comp)
+
+        le = self.lineEdit()
+        if le is not None:
+            le.setClearButtonEnabled(False)
+            le.setTextMargins(0, 0, 18, 0)
+            le.returnPressed.connect(self._normalize_typed_value)
+
+    def _normalize_typed_value(self):
+        txt = (self.currentText() or "").strip()
+        if not txt:
+            return
+        idx = self.findText(txt, Qt.MatchFixedString | Qt.MatchCaseSensitive)
+        if idx < 0:
+            idx = self.findText(txt, Qt.MatchFixedString | Qt.MatchCaseInsensitive)
+        if idx < 0:
+            idx = self.findText(txt, Qt.MatchStartsWith | Qt.MatchCaseInsensitive)
+        if idx < 0:
+            idx = self.findText(txt, Qt.MatchContains | Qt.MatchCaseInsensitive)
+        if idx >= 0 and idx != self.currentIndex():
+            self.setCurrentIndex(idx)
+
     def showPopup(self):
         super().showPopup()
         self._polish_popup()
         QTimer.singleShot(0, self._polish_popup)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        # Seta sempre visível à direita (independente de tema/QSS da máquina).
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor("#64748b"))
+        right = self.rect().right() - 14
+        cy = self.rect().center().y()
+        tri = QPolygon(
+            [
+                QPoint(right - 4, cy - 2),
+                QPoint(right + 4, cy - 2),
+                QPoint(right, cy + 3),
+            ]
+        )
+        painter.drawPolygon(tri)
+        painter.end()
 
     def _polish_popup(self):
         view = self.view()

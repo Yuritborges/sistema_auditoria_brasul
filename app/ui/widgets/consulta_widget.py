@@ -6,8 +6,6 @@ from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QColor, QDesktopServices, QFont, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
-    QComboBox,
-    QCompleter,
     QFrame,
     QGraphicsDropShadowEffect,
     QHBoxLayout,
@@ -28,6 +26,7 @@ from PySide6.QtWidgets import (
 
 from app.config import ASSETS_DIR, LOGOS_DIR
 from app.services.auditoria_service import AuditoriaService
+from app.ui.widgets.brasul_combo import BrasulComboBox
 
 LOGO_PATHS = [
     os.path.join(LOGOS_DIR, "logo_brasul.png"),
@@ -175,20 +174,12 @@ class ConsultaPatraoWidget(QWidget):
         title.setObjectName("sectionTitle")
         layout.addWidget(title)
 
-        self.cb_comprador = QComboBox()
-        self.cb_empresa = QComboBox()
-        self.cb_status = QComboBox()
+        self.cb_comprador = BrasulComboBox()
+        self.cb_empresa = BrasulComboBox()
+        self.cb_status = BrasulComboBox()
         self.cb_status.addItems(["TODOS", "OK", "Sem PDF", "Sem comprador", "Critico"])
-        self.cb_obra = QComboBox()
-        self.cb_obra.setEditable(True)
-        self.cb_fornecedor = QComboBox()
-        self.cb_fornecedor.setEditable(True)
-        for cb in (self.cb_obra, self.cb_fornecedor):
-            comp = QCompleter()
-            comp.setCaseSensitivity(Qt.CaseInsensitive)
-            comp.setFilterMode(Qt.MatchContains)
-            cb.setCompleter(comp)
-            cb.setInsertPolicy(QComboBox.NoInsert)
+        self.cb_obra = BrasulComboBox()
+        self.cb_fornecedor = BrasulComboBox()
         self.ed_item = QLineEdit()
         self.ed_item.setPlaceholderText("Descrição do item / material...")
         self.ed_numero = QLineEdit()
