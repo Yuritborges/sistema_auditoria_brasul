@@ -10,11 +10,11 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QSizePolicy,
     QTableWidget,
-    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
+from app.ui.consulta_readonly import configurar_tabela_consulta, item_consulta
 from app.ui.style import APP_STYLESHEET
 
 
@@ -145,11 +145,12 @@ class ObraDetailDialog(QDialog):
         tforn.setFocusPolicy(Qt.NoFocus)
         tforn.horizontalHeader().setStretchLastSection(True)
         tforn.setMaximumHeight(220)
+        configurar_tabela_consulta(tforn)
         for i, (fn, val) in enumerate(resumo.get("top_fornecedores") or []):
             tforn.insertRow(i)
             tforn.setRowHeight(i, 28)
-            tforn.setItem(i, 0, QTableWidgetItem(fn))
-            it = QTableWidgetItem(self._fmt(val))
+            tforn.setItem(i, 0, item_consulta(fn))
+            it = item_consulta(self._fmt(val))
             it.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             tforn.setItem(i, 1, it)
         fl.addWidget(tforn)
@@ -171,6 +172,7 @@ class ObraDetailDialog(QDialog):
         tbl.setFocusPolicy(Qt.NoFocus)
         tbl.horizontalHeader().setStretchLastSection(True)
         tbl.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.MinimumExpanding)
+        configurar_tabela_consulta(tbl)
         for i, p in enumerate(pedidos[:500]):
             tbl.insertRow(i)
             tbl.setRowHeight(i, 28)
@@ -183,7 +185,7 @@ class ObraDetailDialog(QDialog):
                 str(p.get("status_auditoria") or ""),
             ]
             for c, x in enumerate(vals):
-                it = QTableWidgetItem(x)
+                it = item_consulta(x)
                 if c in (0, 1, 4, 5):
                     it.setTextAlignment(Qt.AlignCenter)
                 tbl.setItem(i, c, it)

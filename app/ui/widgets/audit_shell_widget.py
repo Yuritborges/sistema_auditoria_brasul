@@ -1,3 +1,4 @@
+import logging
 import os
 
 from PySide6.QtCore import Qt, QTimer
@@ -78,6 +79,7 @@ class AuditShellWidget(QWidget):
         QTimer.singleShot(0, lambda: self.recarregar(force=False))
 
     def _ask_session_user(self):
+        log = logging.getLogger(__name__)
         try:
             users = self.service.listar_usuarios()
             dlg = UserSessionDialog(self.service, users, None)
@@ -87,7 +89,15 @@ class AuditShellWidget(QWidget):
             self.current_user = user
             self.profile = normalize_profile(profile)
             return True
-        except Exception:
+        except Exception as e:
+            log.exception("Falha no diálogo de sessão")
+            QMessageBox.critical(
+                None,
+                "Erro de acesso",
+                "Não foi possível concluir o login.\n\n"
+                f"{type(e).__name__}: {e}\n\n"
+                "Veja logs/auditoria_app.log para o detalhe completo.",
+            )
             return False
 
     def _quit_app(self):

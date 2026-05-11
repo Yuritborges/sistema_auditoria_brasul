@@ -632,12 +632,26 @@ class AuditoriaService:
         self._summary_cache[cache_key] = out
         return out
 
+    @staticmethod
+    def _pedido_datetime_ord(p):
+        d = p.get("_data_ord")
+        if isinstance(d, datetime):
+            return d
+        txt = (p.get("data_pedido") or "").strip()
+        for fmt in ("%d/%m/%Y", "%d/%m/%y"):
+            try:
+                return datetime.strptime(txt, fmt)
+            except ValueError:
+                continue
+        return datetime.min
+
     def fornecedor_auditoria(self, dados, fornecedor):
         cache_key = ("fornecedor_auditoria", self._data_version, (fornecedor or "").strip().upper(), len(dados))
         if cache_key in self._summary_cache:
             return self._summary_cache[cache_key]
         alvo = fornecedor.strip().upper()
         rows = [p for p in dados if (p.get("fornecedor_nome") or "").strip().upper() == alvo]
+        rows.sort(key=self._pedido_datetime_ord, reverse=True)
         total = sum(p.get("_valor_total_float", float(p.get("valor_total") or 0)) for p in rows)
         out = {
             "rows": rows,
@@ -829,6 +843,12 @@ class AuditoriaService:
 
     def usuario_tem_senha(self, nome):
         return self.audit_store.user_has_password(nome)
+
+    def limpar_senha_para_primeiro_acesso(self, nome, operador="SISTEMA"):
+        """Zera a senha gravada; na proxima abertura o usuario define nova senha no login."""
+        nome_norm = (nome or "").strip().upper()
+        self.audit_store.clear_user_password(nome_norm)
+        self.audit_store.log("usuarios", nome_norm, "CLEAR_PASSWORD", "senha_hash", "***", "", operador)
 
     def definir_senha_usuario(self, nome, senha, operador="SISTEMA"):
         nome_norm = (nome or "").strip().upper()

@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.ui.consulta_readonly import configurar_tabela_consulta
 from app.ui.widgets.brasul_combo import BrasulComboBox
 from app.ui.widgets.brasul_date_edit import BrasulDateEdit
 
@@ -143,6 +144,7 @@ class PedidosWidget(QWidget):
         self.tbl.setColumnWidth(8, 82)
         self.tbl.setColumnWidth(9, 82)
         self.tbl.setColumnWidth(10, 72)
+        configurar_tabela_consulta(self.tbl)
         tbl_l.addWidget(self.tbl)
         root.addWidget(tbl_card, 1)
 

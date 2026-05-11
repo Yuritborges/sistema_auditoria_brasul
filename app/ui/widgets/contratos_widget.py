@@ -13,6 +13,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.ui.consulta_readonly import configurar_tabela_consulta
+
 
 class ContratosWidget(QWidget):
     def __init__(self, service, usuario_getter):
@@ -125,6 +127,7 @@ class ContratosWidget(QWidget):
         self.tbl.setColumnWidth(4, 100)
         self.tbl.setColumnWidth(5, 110)
         self.tbl.setColumnWidth(6, 90)
+        configurar_tabela_consulta(self.tbl)
         c_l.addWidget(self.tbl)
 
         a_card = QFrame()
@@ -143,6 +146,7 @@ class ContratosWidget(QWidget):
         self.tbl_ad.setColumnWidth(3, 90)
         self.tbl_ad.setColumnWidth(4, 70)
         self.tbl_ad.setColumnWidth(5, 90)
+        configurar_tabela_consulta(self.tbl_ad)
         a_l.addWidget(self.tbl_ad)
 
         row.addWidget(c_card, 3)

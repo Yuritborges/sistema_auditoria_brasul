@@ -11,6 +11,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.ui.consulta_readonly import configurar_tabela_consulta
+
 
 class ItensWidget(QWidget):
     def __init__(self, service):
@@ -73,6 +75,7 @@ class ItensWidget(QWidget):
         self.tbl.setColumnWidth(2, 188)
         self.tbl.setColumnWidth(3, 104)
         self.tbl.setColumnWidth(4, 96)
+        configurar_tabela_consulta(self.tbl)
         tbl_l.addWidget(self.tbl)
         root.addWidget(tbl_card, 1)
 

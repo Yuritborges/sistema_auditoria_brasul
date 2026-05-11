@@ -12,6 +12,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.ui.consulta_readonly import configurar_tabela_consulta
+
 
 class OrcamentosWidget(QWidget):
     def __init__(self, service, usuario_getter):
@@ -81,6 +83,7 @@ class OrcamentosWidget(QWidget):
         self.tbl.setColumnWidth(3, 112)
         self.tbl.setColumnWidth(4, 96)
         self.tbl.setColumnWidth(5, 100)
+        configurar_tabela_consulta(self.tbl)
         tbl_l.addWidget(self.tbl)
         root.addWidget(tbl_card, 1)
 
@@ -103,6 +106,7 @@ class OrcamentosWidget(QWidget):
         self.tbl_alertas.setFocusPolicy(Qt.NoFocus)
         self.tbl_alertas.horizontalHeader().setStretchLastSection(True)
         self.tbl_alertas.setColumnWidth(0, 140)
+        configurar_tabela_consulta(self.tbl_alertas)
         al.addWidget(self.tbl_alertas)
         root.addWidget(alert_card, 1)
 

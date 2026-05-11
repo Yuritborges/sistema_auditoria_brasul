@@ -15,6 +15,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.ui.consulta_readonly import configurar_tabela_consulta
+
 
 class FiscalizacaoWidget(QWidget):
     def __init__(self, service, usuario_getter):
@@ -98,6 +100,7 @@ class FiscalizacaoWidget(QWidget):
         self.tbl_v.setColumnWidth(2, 95)
         self.tbl_v.setColumnWidth(3, 120)
         self.tbl_v.setColumnWidth(4, 90)
+        configurar_tabela_consulta(self.tbl_v)
         v_l.addWidget(self.tbl_v)
 
         r_card = QFrame(); r_card.setObjectName("panelCard")
@@ -114,6 +117,7 @@ class FiscalizacaoWidget(QWidget):
         self.tbl_r.setColumnWidth(3, 90)
         self.tbl_r.setColumnWidth(4, 95)
         self.tbl_r.setColumnWidth(5, 220)
+        configurar_tabela_consulta(self.tbl_r)
         r_l.addWidget(self.tbl_r)
 
         a_card = QFrame(); a_card.setObjectName("panelCard")
@@ -127,6 +131,7 @@ class FiscalizacaoWidget(QWidget):
         self.tbl_a.setColumnWidth(0, 50)
         self.tbl_a.setColumnWidth(1, 70)
         self.tbl_a.setColumnWidth(2, 300)
+        configurar_tabela_consulta(self.tbl_a)
         a_l.addWidget(self.tbl_a)
 
         row.addWidget(v_card, 0, 0)

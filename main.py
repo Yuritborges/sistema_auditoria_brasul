@@ -5,18 +5,9 @@ import logging
 from logging.handlers import RotatingFileHandler
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
+from app.config import resolve_app_icon_path
 from app.ui.main_window import MainWindowPatrao
 from app.ui.style import APP_STYLESHEET
-
-
-def _icone_app_path():
-    base = os.path.dirname(os.path.abspath(__file__))
-    candidatos = [
-        os.path.join(base, "assets", "iconebrasul2.ico"),
-        os.path.join(base, "assets", "iconebrasul.png"),
-        os.path.join(base, "assets", "logos", "logo_brasul.png"),
-    ]
-    return next((p for p in candidatos if os.path.exists(p)), "")
 
 
 def _configure_logging():
@@ -49,10 +40,13 @@ def main():
     app.setStyle("Fusion")
     # Aplica identidade visual global (inclui popups/combobox/messagebox).
     app.setStyleSheet(APP_STYLESHEET)
-    icon_path = _icone_app_path()
+    icon_path = resolve_app_icon_path()
     if icon_path:
-        app.setWindowIcon(QIcon(icon_path))
+        ic = QIcon(icon_path)
+        app.setWindowIcon(ic)
     win = MainWindowPatrao()
+    if icon_path:
+        win.setWindowIcon(QIcon(icon_path))
     win.show()
     sys.exit(app.exec())
 

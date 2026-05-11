@@ -333,6 +333,18 @@ class AuditStore:
         finally:
             conn.close()
 
+    def clear_user_password(self, nome):
+        """Remove o hash para o usuario voltar ao fluxo de primeiro acesso (definir senha no login)."""
+        conn = self._connect()
+        try:
+            conn.execute(
+                "UPDATE usuarios SET senha_hash=? WHERE UPPER(TRIM(nome))=?",
+                ("", nome.strip().upper()),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
     def delete_user(self, nome):
         conn = self._connect()
         try:

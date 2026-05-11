@@ -7,11 +7,11 @@ from PySide6.QtWidgets import (
     QLabel,
     QProgressBar,
     QTableWidget,
-    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
+from app.ui.consulta_readonly import configurar_tabela_consulta, item_consulta
 from app.ui.widgets.obra_detail_dialog import ObraDetailDialog
 
 
@@ -142,6 +142,7 @@ class DashboardWidget(QWidget):
         tbl.horizontalHeader().setStretchLastSection(True)
         tbl.setShowGrid(False)
         tbl.setFocusPolicy(Qt.StrongFocus)
+        configurar_tabela_consulta(tbl)
         return tbl
 
     def _table_card(self, title, table, hint=None):
@@ -186,9 +187,9 @@ class DashboardWidget(QWidget):
         for i, (a, b) in enumerate(rows):
             tbl.insertRow(i)
             tbl.setRowHeight(i, 30)
-            tbl.setItem(i, 0, QTableWidgetItem(str(a)))
+            tbl.setItem(i, 0, item_consulta(str(a)))
             txt = self._fmt(b) if money else str(b)
-            it = QTableWidgetItem(txt)
+            it = item_consulta(txt)
             it.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             tbl.setItem(i, 1, it)
 

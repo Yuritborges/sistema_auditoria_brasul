@@ -1,3 +1,5 @@
+import logging
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QDialog,
@@ -5,7 +7,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QMessageBox,
     QPushButton,
     QVBoxLayout,
 )
@@ -21,7 +22,6 @@ class UserSessionDialog(QDialog):
         self.service = service
         self.setObjectName("loginDialog")
         self.setWindowTitle("Acesso ao Sistema")
-        # Janela top-level para aparecer na barra de tarefas do Windows.
         self.setWindowFlag(Qt.Window, True)
         self.setModal(True)
         self.setMinimumWidth(560)
@@ -55,11 +55,12 @@ class UserSessionDialog(QDialog):
         title = QLabel("Sistema de Auditoria")
         title.setObjectName("loginTitle")
         title.setAlignment(Qt.AlignCenter)
-        subtitle = QLabel("Selecione o usuário para iniciar")
-        subtitle.setObjectName("muted")
-        subtitle.setAlignment(Qt.AlignCenter)
+        self.subtitle = QLabel("Selecione o usuário e informe a senha")
+        self.subtitle.setObjectName("muted")
+        self.subtitle.setAlignment(Qt.AlignCenter)
+        self.subtitle.setWordWrap(True)
         card_l.addWidget(title)
-        card_l.addWidget(subtitle)
+        card_l.addWidget(self.subtitle)
 
         self.users_box = QVBoxLayout()
         self.users_box.setSpacing(10)
@@ -69,7 +70,19 @@ class UserSessionDialog(QDialog):
         self.ed_password.setEchoMode(QLineEdit.Password)
         self.ed_password.setPlaceholderText("Senha")
         self.ed_password.returnPressed.connect(self._accept_login)
+        self.ed_password.textChanged.connect(self._on_password_edited)
         card_l.addWidget(self.ed_password)
+
+        self.lbl_hint = QLabel("")
+        self.lbl_hint.setObjectName("loginHint")
+        self.lbl_hint.setWordWrap(True)
+        card_l.addWidget(self.lbl_hint)
+
+        self.lbl_error = QLabel("")
+        self.lbl_error.setObjectName("loginError")
+        self.lbl_error.setWordWrap(True)
+        self.lbl_error.hide()
+        card_l.addWidget(self.lbl_error)
 
         self.lbl_selected = QLabel("Usuário selecionado: -")
         self.lbl_selected.setObjectName("muted")
@@ -89,6 +102,21 @@ class UserSessionDialog(QDialog):
         root.addWidget(card)
 
         self._reload_users()
+
+    def _on_password_edited(self, _t):
+        self.lbl_error.hide()
+
+    def _atualizar_dica_senha(self):
+        if not self._logged_user:
+            self.lbl_hint.setText("")
+            return
+        if self.service.usuario_tem_senha(self._logged_user):
+            self.lbl_hint.setText("Digite sua senha e clique em Entrar.")
+        else:
+            self.lbl_hint.setText(
+                "Primeiro acesso para este usuário: digite a senha que deseja usar "
+                "(mínimo 4 caracteres) e clique em Entrar — ela será salva e usada daqui em diante."
+            )
 
     def _reload_users(self):
         self._users = self.service.listar_usuarios()
@@ -121,26 +149,48 @@ class UserSessionDialog(QDialog):
         self._logged_user = nome
         self._logged_profile = normalize_profile(perfil)
         self.lbl_selected.setText(f"Usuário selecionado: {nome.title()}  •  Perfil: {self._logged_profile}")
+        self.lbl_error.hide()
+        self._atualizar_dica_senha()
+        self.ed_password.clear()
         self.ed_password.setFocus()
 
     def _accept_login(self):
-        if not self._logged_user:
-            QMessageBox.warning(self, "Acesso", "Selecione um usuário.")
-            return
-        senha = self.ed_password.text()
-        if not self.service.usuario_tem_senha(self._logged_user):
-            if not senha or len(senha) < 4:
-                QMessageBox.warning(self, "Primeiro acesso", "Defina uma senha com ao menos 4 caracteres.")
+        log = logging.getLogger(__name__)
+        self.lbl_error.hide()
+        try:
+            if not self._logged_user:
+                self.lbl_error.setText("Selecione um usuário (botão acima).")
+                self.lbl_error.show()
                 return
-            self.service.definir_senha_usuario(self._logged_user, senha, self._logged_user)
-            QMessageBox.information(self, "Senha definida", "Senha criada com sucesso para este usuário.")
+            senha = self.ed_password.text()
+            if not self.service.usuario_tem_senha(self._logged_user):
+                if not senha or len(senha) < 4:
+                    self.lbl_error.setText("A senha deve ter pelo menos 4 caracteres.")
+                    self.lbl_error.show()
+                    self.ed_password.setFocus()
+                    return
+                self.service.definir_senha_usuario(self._logged_user, senha, self._logged_user)
+                self.accept()
+                return
+            if not self.service.autenticar_usuario(self._logged_user, senha):
+                self.lbl_error.setText(
+                    "Senha incorreta. Confira Caps Lock e tente de novo.\n"
+                    "Esqueceu? Peça ao TI ou use: python tools/reset_admin_password.py --limpar"
+                )
+                self.lbl_error.show()
+                self.ed_password.selectAll()
+                self.ed_password.setFocus()
+                return
             self.accept()
-            return
-        if not self.service.autenticar_usuario(self._logged_user, senha):
-            QMessageBox.warning(self, "Acesso", "Usuário/senha inválidos.")
-            return
-        self.accept()
-
+        except Exception as e:
+            log.exception("Falha ao autenticar")
+            self.lbl_error.setText(
+                "Erro ao gravar ou validar a senha (detalhes em logs/auditoria_app.log).\n\n"
+                f"{type(e).__name__}: {e}\n\n"
+                "Verifique permissão de escrita na pasta do programa (database/)."
+            )
+            self.lbl_error.show()
+            self.ed_password.setFocus()
 
     def selected(self):
         return self._logged_user or "ADMIN", normalize_profile(self._logged_profile)

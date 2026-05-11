@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.core.auth import PERMISSIONS_BY_PROFILE, assignable_profiles, normalize_profile
+from app.ui.consulta_readonly import configurar_tabela_consulta
 from app.ui.widgets.brasul_combo import BrasulComboBox
 
 
@@ -91,6 +92,7 @@ class UsuariosWidget(QWidget):
         self.tbl.setColumnWidth(0, 148)
         self.tbl.setColumnWidth(1, 168)
         self.tbl.setColumnWidth(2, 80)
+        configurar_tabela_consulta(self.tbl)
         tbl_l.addWidget(self.tbl)
         root.addWidget(tbl_card, 1)
 

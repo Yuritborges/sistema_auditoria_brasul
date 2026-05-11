@@ -10,8 +10,42 @@ def _resolve_base_dir():
 
 
 BASE_DIR = _resolve_base_dir()
-ASSETS_DIR = os.path.join(BASE_DIR, "assets")
+
+
+def _resolve_assets_dir():
+    """Pasta assets: dev em ./assets; no .exe PyInstaller pode ser sys._MEIPASS/assets ou ./_internal/assets."""
+    if not getattr(sys, "frozen", False):
+        return os.path.abspath(os.path.join(BASE_DIR, "assets"))
+    candidates = []
+    meipass = getattr(sys, "_MEIPASS", None) or ""
+    if meipass:
+        candidates.append(os.path.join(meipass, "assets"))
+    candidates.append(os.path.join(BASE_DIR, "_internal", "assets"))
+    candidates.append(os.path.join(BASE_DIR, "assets"))
+    marker = "iconebrasul2.ico"
+    for c in candidates:
+        if c and os.path.isfile(os.path.join(c, marker)):
+            return os.path.abspath(c)
+    for c in candidates:
+        if c and os.path.isdir(c):
+            return os.path.abspath(c)
+    return os.path.abspath(os.path.join(BASE_DIR, "assets"))
+
+
+ASSETS_DIR = _resolve_assets_dir()
 LOGOS_DIR = os.path.join(ASSETS_DIR, "logos")
+
+
+def resolve_app_icon_path():
+    """Arquivo de ícone para QApplication / janela (caminho absoluto)."""
+    for name in ("iconebrasul2.ico", "iconebrasul.png"):
+        p = os.path.join(ASSETS_DIR, name)
+        if os.path.isfile(p):
+            return os.path.abspath(p)
+    p = os.path.join(LOGOS_DIR, "logo_brasul.png")
+    if os.path.isfile(p):
+        return os.path.abspath(p)
+    return ""
 
 # Mesma árvore do sistema de pedidos (Z:\0 OBRAS\brasul_pedidos\...).
 BASE_REDE_PEDIDOS = r"Z:\0 OBRAS\brasul_pedidos"

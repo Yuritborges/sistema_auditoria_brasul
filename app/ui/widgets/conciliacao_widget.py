@@ -12,6 +12,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.ui.consulta_readonly import configurar_tabela_consulta
+
 
 class ConciliacaoWidget(QWidget):
     def __init__(self, service, usuario_getter):
@@ -88,6 +90,7 @@ class ConciliacaoWidget(QWidget):
         self.tbl.setColumnWidth(5, 260)
         self.tbl.setColumnWidth(6, 70)
         self.tbl.setColumnWidth(7, 100)
+        configurar_tabela_consulta(self.tbl)
         cl.addWidget(self.tbl)
         root.addWidget(card, 1)
 

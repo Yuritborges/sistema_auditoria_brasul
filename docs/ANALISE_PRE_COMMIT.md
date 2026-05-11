@@ -2,7 +2,7 @@
 
 ## Resumo
 
-Aplicação **desktop PySide6** com SQLite (banco consolidado de pedidos + `auditoria_local.db` para usuários/orçamentos). Ponto forte: separação `service` / `repository` / `ui`. Riscos principais: **acesso a rede (Z:)** no startup (mitigado com carga leve de PDF), **dependência de caminhos fixos** no `config.py`, e **código legado** (`consulta_widget.py` não referenciado).
+Aplicação **desktop PySide6** com SQLite (banco consolidado de pedidos + `auditoria_local.db` para usuários/orçamentos). Ponto forte: separação `service` / `repository` / `ui`. Riscos principais: **acesso a rede (Z:)** no startup (mitigado com carga leve de PDF) e **dependência de caminhos fixos** no `config.py`.
 
 ---
 
@@ -24,7 +24,7 @@ Aplicação **desktop PySide6** com SQLite (banco consolidado de pedidos + `audi
 | **Banco** | `database/auditoria_local.db` no `.gitignore` — evita commit de senhas/hashes; bootstrap de usuários no primeiro run. |
 | **PDF** | Carga inicial confia em caminhos do índice sem `exists` (troca de UX por velocidade). “Buscar PDFs” revalida. |
 | **Exceções** | Vários `except: pass` em `auditoria_service.py` (JSON, CSV, etc.): silencioso; em manutenção, logar com `logging` no mínimo. |
-| **Legado** | `app/ui/widgets/consulta_widget.py` — não importado no shell; candidato a remoção ou integração. |
+| **Legado** | ~~`consulta_widget.py`~~ removido (não era referenciado pelo shell). |
 | **Ortografia UI** | Filtro `Critico` → `Crítico` (opcional). Fornecedores: rótulo “Fomecedor” se ainda existir no .ui. |
 | **Thread** | Não há worker de PDF automático (por escolha do usuário). Busca pesada só no botão. |
 

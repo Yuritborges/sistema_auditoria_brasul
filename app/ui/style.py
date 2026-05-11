@@ -198,6 +198,18 @@ QLabel#loginTitle {
     color: #0f172a;
     letter-spacing: -0.03em;
 }
+QLabel#loginHint {
+    color: #334155;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 2px 2px 0 2px;
+}
+QLabel#loginError {
+    color: #b91c1c;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 6px 2px 2px 2px;
+}
 QPushButton#userTileButton {
     background: #ffffff;
     color: #0f172a;
