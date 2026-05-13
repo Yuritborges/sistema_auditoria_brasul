@@ -86,7 +86,7 @@ cd "Z:\0 OBRAS\sistema_de_pedidos_brasulv2"
 .\.venv\Scripts\python.exe tools\consolidar_rede.py
 ```
 
-No **Sistema de Auditoria**, o botão da barra lateral **«Atualizar pedidos (rede)»** executa o mesmo script (se existir em `Z:\0 OBRAS\sistema_de_pedidos_brasulv2\tools\`) e em seguida recarrega o `cotacao_rede.db`. Caminhos alternativos: variáveis `AUDITORIA_CONSOLIDAR_SCRIPT` e opcionalmente `AUDITORIA_CONSOLIDAR_PYTHON`.
+No **Sistema de Auditoria**, o botão da barra lateral **«Atualizar pedidos (rede)»** executa o mesmo script (se existir em `Z:\0 OBRAS\sistema_de_pedidos_brasulv2\tools\`) com **Python do `.venv` na rede** (não o `.exe` da auditoria — usar o `.exe` como intérprete relançava a interface). Caminhos alternativos: `AUDITORIA_CONSOLIDAR_SCRIPT` e `AUDITORIA_CONSOLIDAR_PYTHON`.
 
 Feche o sistema de pedidos nas máquinas se o script acusar banco em uso. Depois de consolidar, reabra a auditoria (ou use *Atualizar* / recarregar se existir) para ver pedidos novos.
 

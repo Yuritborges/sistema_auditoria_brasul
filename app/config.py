@@ -137,19 +137,43 @@ def pdf_index_cache_path():
     return os.path.join(cache_dir, "pdf_index.json")
 
 
+def _python_for_consolidar_subprocess():
+    """Intérprete para correr consolidar_rede.py em subprocesso.
+
+    Com a aplicação empacotada (PyInstaller), ``sys.executable`` é o próprio .exe da
+    auditoria — usá-lo como «Python» relança a GUI (novo login / segunda janela).
+    """
+    explicit = (os.environ.get("AUDITORIA_CONSOLIDAR_PYTHON") or "").strip()
+    if explicit and os.path.isfile(explicit):
+        return os.path.abspath(explicit)
+    if not getattr(sys, "frozen", False):
+        return sys.executable
+    ob = os.path.dirname(BASE_REDE_PEDIDOS)
+    for folder in ("sistema_de_pedidos_brasulv2", "sistema_de_pedidos_brasul", "sistema_auditoria_brasul"):
+        cand = os.path.join(ob, folder, ".venv", "Scripts", "python.exe")
+        if os.path.isfile(cand):
+            return os.path.abspath(cand)
+    return ""
+
+
 def resolve_consolidar_argv():
     """[python, consolidar_rede.py] para atualizar cotacao_rede.db; None se o ficheiro não existir.
 
     AUDITORIA_CONSOLIDAR_SCRIPT — caminho absoluto do consolidar_rede.py (opcional).
-    AUDITORIA_CONSOLIDAR_PYTHON — intérprete a usar (opcional; por defeito o mesmo que corre a auditoria).
+    AUDITORIA_CONSOLIDAR_PYTHON — intérprete a usar (obrigatório em .exe se não existir
+        .venv\\Scripts\\python.exe em sistema_de_pedidos_brasulv2 ou sistema_auditoria_brasul).
     """
+    py = _python_for_consolidar_subprocess()
     script = os.environ.get("AUDITORIA_CONSOLIDAR_SCRIPT", "").strip()
-    py = os.environ.get("AUDITORIA_CONSOLIDAR_PYTHON", "").strip() or sys.executable
     if script and os.path.isfile(script):
+        if not py:
+            return None
         return [py, os.path.abspath(script)]
     ob = os.path.dirname(BASE_REDE_PEDIDOS)
     for folder in ("sistema_de_pedidos_brasulv2", "sistema_de_pedidos_brasul"):
         cand = os.path.join(ob, folder, "tools", "consolidar_rede.py")
         if os.path.isfile(cand):
+            if not py:
+                return None
             return [py, os.path.abspath(cand)]
     return None

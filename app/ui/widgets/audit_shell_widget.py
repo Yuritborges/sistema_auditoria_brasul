@@ -93,8 +93,12 @@ class AuditShellWidget(QWidget):
             QMessageBox.warning(
                 self,
                 "Consolidação",
-                "Não foi encontrado tools/consolidar_rede.py no sistema de pedidos.\n"
-                "Defina AUDITORIA_CONSOLIDAR_SCRIPT (caminho absoluto do .py).",
+                "Não foi possível preparar o comando de consolidação.\n\n"
+                "• Confirme que existe tools\\consolidar_rede.py no sistema de pedidos (rede), ou defina "
+                "AUDITORIA_CONSOLIDAR_SCRIPT.\n"
+                "• Se abre a auditoria pelo .exe empacotado, defina AUDITORIA_CONSOLIDAR_PYTHON com o caminho "
+                "para python.exe (ex.: …\\sistema_de_pedidos_brasulv2\\.venv\\Scripts\\python.exe) "
+                "ou mantenha um .venv nessa pasta na rede.",
             )
             return
         QApplication.setOverrideCursor(Qt.WaitCursor)
