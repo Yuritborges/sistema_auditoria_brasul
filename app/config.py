@@ -113,6 +113,15 @@ AUDITORIA_DB_COPY_ON_FORCE_RELOAD = os.environ.get(
 # Ex.: set AUDITORIA_AUTO_RELOAD_MS=15000 para 15 s.
 AUDITORIA_AUTO_RELOAD_MS_DEFAULT = 30_000
 
+# Cada tick do timer chama carregar(force=True): copia o consolidado para ficheiro local
+# antes de abrir (respeita AUDITORIA_DB_COPY_ON_FORCE_RELOAD). Em pastas de rede (SMB)
+# o ficheiro cotacao_rede.db pode ser atualizado pelo sistema de pedidos e a auditoria
+# ainda «ver» dados antigos com invalidate + force=False — isto alinha com «tempo real».
+# Desative com AUDITORIA_AUTO_RELOAD_FORCE=0 se o .db for muito grande e o intervalo curto.
+AUDITORIA_AUTO_RELOAD_FORCE = os.environ.get(
+    "AUDITORIA_AUTO_RELOAD_FORCE", "1"
+).strip().lower() in ("1", "true", "sim", "yes")
+
 
 def resolve_pdf_roots():
     roots = []

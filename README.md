@@ -42,7 +42,7 @@ pip install pyinstaller
 powershell -ExecutionPolicy Bypass -File tools\build_release.ps1
 ```
 
-O script faz primeiro um backup em `Z:\0 OBRAS\sistema_auditoria_brasul_BACKUP_AAAAMMDD_HHMM` (cópia completa exceto `.venv` e `__pycache__`), depois o PyInstaller, `releases\…` e `current\`.
+O script **não** duplica o projeto em `Z:\0 OBRAS\` por defeito (evita pastas `sistema_auditoria_brasul_BACKUP_*` fora da pasta do programa). Para ativar cópia de segurança antes do build: `AUDITORIA_RELEASE_BACKUP=1`. Snapshots antigos podem ficar em `backups\legacy_snapshots\` dentro do projeto.
 
 Ou execute `ATUALIZAR_AUDITORIA.bat` na raiz do projeto (faz o mesmo build e copia para `current\`).
 

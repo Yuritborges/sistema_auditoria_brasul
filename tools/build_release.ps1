@@ -1,19 +1,30 @@
 # Gera SistemaAuditoriaBrasul com PyInstaller, copia para releases/ (timestamp) e current/.
 # Uso: powershell -ExecutionPolicy Bypass -File tools\build_release.ps1
+#
+# Backup opcional ANTES do build (desligado por defeito — nao cria pastas em Z:\0 OBRAS\):
+#   $env:AUDITORIA_RELEASE_BACKUP = "1"
+# Copia o projeto para a pasta PAI com nome sistema_auditoria_brasul_BACKUP_YYYYMMDD_HHmm
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path $PSScriptRoot -Parent
 Set-Location $Root
 
 $stamp = Get-Date -Format "yyyyMMdd_HHmm"
-$parent = Split-Path $Root -Parent
-$backupDest = Join-Path $parent "sistema_auditoria_brasul_BACKUP_$stamp"
-Write-Host "[0/4] Backup completo (exclui .venv e __pycache__) -> $backupDest ..."
-New-Item -ItemType Directory -Path $backupDest -Force | Out-Null
-& robocopy.exe $Root $backupDest /E /XD .venv __pycache__ /NFL /NDL /NJH /NJS /NP /R:2 /W:2 | Out-Null
-$rc = $LASTEXITCODE
-if ($rc -ge 8) {
-    throw "Backup (robocopy) falhou com codigo $rc. Verifique espaco e permissoes em $parent"
+$wb = if ($null -ne $env:AUDITORIA_RELEASE_BACKUP) { "$env:AUDITORIA_RELEASE_BACKUP" } else { "" }
+$wantBackup = @("1", "true", "yes", "sim") -contains $wb.Trim().ToLowerInvariant()
+$backupDest = $null
+if ($wantBackup) {
+    $parent = Split-Path $Root -Parent
+    $backupDest = Join-Path $parent "sistema_auditoria_brasul_BACKUP_$stamp"
+    Write-Host "[0/4] Backup completo (AUDITORIA_RELEASE_BACKUP=1) -> $backupDest ..."
+    New-Item -ItemType Directory -Path $backupDest -Force | Out-Null
+    & robocopy.exe $Root $backupDest /E /XD .venv __pycache__ /NFL /NDL /NJH /NJS /NP /R:2 /W:2 | Out-Null
+    $rc = $LASTEXITCODE
+    if ($rc -ge 8) {
+        throw "Backup (robocopy) falhou com codigo $rc. Verifique espaco e permissoes em $parent"
+    }
+} else {
+    Write-Host "[0/4] Backup pre-build desativado (omitido para nao duplicar o projeto fora da pasta). Defina AUDITORIA_RELEASE_BACKUP=1 se quiser a copia antiga."
 }
 
 $PyInstaller = Join-Path $Root ".venv\Scripts\pyinstaller.exe"
@@ -46,7 +57,11 @@ if ($rc -ge 8) {
 }
 
 Write-Host "[4/4] Concluido."
-Write-Host "OK backup:  $backupDest"
+if ($backupDest) {
+    Write-Host "OK backup:  $backupDest"
+} else {
+    Write-Host "OK backup:  (omitido)"
+}
 Write-Host "OK releases: $destRelease\SISTEMA AUDITORIA BRASUL.exe"
 Write-Host "OK current:  $cur\SISTEMA AUDITORIA BRASUL.exe"
 Write-Host "Quem usa o atalho em current recebe esta versao na proxima abertura."

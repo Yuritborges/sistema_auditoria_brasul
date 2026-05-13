@@ -17,7 +17,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.config import AUDITORIA_AUTO_RELOAD_MS_DEFAULT, resolve_consolidar_argv
+from app.config import (
+    AUDITORIA_AUTO_RELOAD_FORCE,
+    AUDITORIA_AUTO_RELOAD_MS_DEFAULT,
+    resolve_consolidar_argv,
+)
 from app.core.auth import PERMISSIONS_BY_PROFILE, can_access, normalize_profile
 from app.ui.branding import logo_label_compact, logo_label_sidebar
 from app.ui.style import APP_STYLESHEET
@@ -181,7 +185,9 @@ class AuditShellWidget(QWidget):
         self.btn_sync_pedidos = QPushButton("Atualizar pedidos (rede)")
         self.btn_sync_pedidos.setObjectName("secondaryButton")
         self.btn_sync_pedidos.setToolTip(
-            "Executa a consolidação do sistema de pedidos para o ficheiro cotacao_rede.db e volta a carregar."
+            "Executa a consolidação (Iury+Thamyres → cotacao_rede.db) e volta a carregar.\n"
+            "Pedidos já gravados no consolidado são atualizados automaticamente pelo timer "
+            "se o ficheiro estiver em Z:\\…\\brasul_pedidos (ver AUDITORIA_AUTO_RELOAD_*)."
         )
         self.btn_sync_pedidos.clicked.connect(self._sincronizar_pedidos_rede)
         side_l.addWidget(self.btn_sync_pedidos)
@@ -336,7 +342,11 @@ class AuditShellWidget(QWidget):
             self._push_data_to_current_widget()
 
     def _auto_recarregar(self):
-        # Atualização periódica: sem invalidar, carregar(False) devolve só a cache se mtime/size
-        # do .db na rede não mudou — comum em SMB mesmo com INSERT já consolidados.
-        self.service.invalidate_consolidated_cache()
-        self.recarregar(force=False)
+        # Em SMB, mtime/size do cotacao_rede.db pode não refletir commits feitos pelo sistema
+        # de pedidos; invalidate + force=False ainda pode ler bytes em cache. force=True
+        # (com cópia local, se AUDITORIA_DB_COPY_ON_FORCE_RELOAD) alinha com pedidos «em tempo real».
+        if AUDITORIA_AUTO_RELOAD_FORCE:
+            self.recarregar(force=True)
+        else:
+            self.service.invalidate_consolidated_cache()
+            self.recarregar(force=False)
