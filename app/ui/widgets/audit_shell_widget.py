@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.config import AUDITORIA_AUTO_RELOAD_MS_DEFAULT, resolve_consolidar_argv
 from app.core.auth import PERMISSIONS_BY_PROFILE, can_access, normalize_profile
 from app.ui.branding import logo_label_compact, logo_label_sidebar
 from app.ui.style import APP_STYLESHEET
@@ -29,7 +30,6 @@ from app.ui.widgets.fornecedores_widget import FornecedoresWidget
 from app.ui.widgets.itens_widget import ItensWidget
 from app.ui.widgets.medicoes_widget import MedicoesWidget
 from app.ui.widgets.obras_widget import ObrasWidget
-from app.ui.widgets.orcamentos_widget import OrcamentosWidget
 from app.ui.widgets.pedidos_widget import PedidosWidget
 from app.ui.widgets.relatorios_widget import RelatoriosWidget
 from app.ui.widgets.user_session_dialog import UserSessionDialog
@@ -37,14 +37,13 @@ from app.ui.widgets.usuarios_widget import UsuariosWidget
 
 
 class AuditShellWidget(QWidget):
-    AUTO_RELOAD_MS = 30_000
+    AUTO_RELOAD_MS = AUDITORIA_AUTO_RELOAD_MS_DEFAULT
     MODULES = [
         ("dashboard", "Dashboard Geral"),
         ("obras", "Obras"),
         ("pedidos", "Pedidos"),
         ("itens", "Itens/Materiais"),
         ("fornecedores", "Fornecedores"),
-        ("orcamentos", "Orçamentos"),
         ("relatorios", "Relatórios"),
         ("auditoria", "Auditoria/Histórico"),
         ("contratos", "Contratos"),
@@ -73,13 +72,40 @@ class AuditShellWidget(QWidget):
             return
         self._build()
         self._auto_reload_timer = QTimer(self)
-        self._auto_reload_timer.setInterval(self.AUTO_RELOAD_MS)
         self._auto_reload_timer.timeout.connect(self._auto_recarregar)
-        self._auto_reload_timer.start()
+        try:
+            reload_ms = int(
+                (os.environ.get("AUDITORIA_AUTO_RELOAD_MS") or str(self.AUTO_RELOAD_MS)).strip()
+            )
+        except ValueError:
+            reload_ms = self.AUTO_RELOAD_MS
+        if reload_ms > 0:
+            self._auto_reload_timer.setInterval(reload_ms)
+            self._auto_reload_timer.start()
         QTimer.singleShot(0, lambda: self.recarregar(force=False))
+
+    def _sincronizar_pedidos_rede(self):
+        if not resolve_consolidar_argv():
+            QMessageBox.warning(
+                self,
+                "Consolidação",
+                "Não foi encontrado tools/consolidar_rede.py no sistema de pedidos.\n"
+                "Defina AUDITORIA_CONSOLIDAR_SCRIPT (caminho absoluto do .py).",
+            )
+            return
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            ok, err = self.service.sincronizar_consolidado_pedidos()
+            if ok:
+                self.recarregar(force=True)
+            else:
+                QMessageBox.warning(self, "Consolidação", err or "Falha desconhecida.")
+        finally:
+            QApplication.restoreOverrideCursor()
 
     def _ask_session_user(self):
         log = logging.getLogger(__name__)
+        dlg = None
         try:
             users = self.service.listar_usuarios()
             dlg = UserSessionDialog(self.service, users, None)
@@ -92,7 +118,7 @@ class AuditShellWidget(QWidget):
         except Exception as e:
             log.exception("Falha no diálogo de sessão")
             QMessageBox.critical(
-                None,
+                dlg,
                 "Erro de acesso",
                 "Não foi possível concluir o login.\n\n"
                 f"{type(e).__name__}: {e}\n\n"
@@ -152,6 +178,14 @@ class AuditShellWidget(QWidget):
         self.btn_refresh.clicked.connect(lambda: self.recarregar(force=True))
         side_l.addWidget(self.btn_refresh)
 
+        self.btn_sync_pedidos = QPushButton("Atualizar pedidos (rede)")
+        self.btn_sync_pedidos.setObjectName("secondaryButton")
+        self.btn_sync_pedidos.setToolTip(
+            "Executa a consolidação do sistema de pedidos para o ficheiro cotacao_rede.db e volta a carregar."
+        )
+        self.btn_sync_pedidos.clicked.connect(self._sincronizar_pedidos_rede)
+        side_l.addWidget(self.btn_sync_pedidos)
+
         root.addWidget(self.sidebar)
 
         self.content_host = QWidget()
@@ -209,7 +243,6 @@ class AuditShellWidget(QWidget):
             "pedidos": lambda: PedidosWidget(self.service),
             "itens": lambda: ItensWidget(self.service),
             "fornecedores": lambda: FornecedoresWidget(self.service),
-            "orcamentos": lambda: OrcamentosWidget(self.service, self._usuario),
             "relatorios": lambda: RelatoriosWidget(self.service),
             "auditoria": lambda: AuditoriaWidget(self.service),
             "contratos": lambda: ContratosWidget(self.service, self._usuario),
@@ -303,5 +336,7 @@ class AuditShellWidget(QWidget):
             self._push_data_to_current_widget()
 
     def _auto_recarregar(self):
-        # Atualização periódica silenciosa para refletir novas consolidações da base.
+        # Atualização periódica: sem invalidar, carregar(False) devolve só a cache se mtime/size
+        # do .db na rede não mudou — comum em SMB mesmo com INSERT já consolidados.
+        self.service.invalidate_consolidated_cache()
         self.recarregar(force=False)

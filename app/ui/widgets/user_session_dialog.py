@@ -1,6 +1,7 @@
 import logging
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import (
     QDialog,
     QFrame,
@@ -93,6 +94,9 @@ class UserSessionDialog(QDialog):
         self.btn_cancel.setObjectName("secondaryButton")
         self.btn_cancel.clicked.connect(self.reject)
         self.btn_enter = QPushButton("Entrar")
+        self.btn_enter.setDefault(True)
+        self.btn_enter.setAutoDefault(True)
+        self.btn_cancel.setAutoDefault(False)
         self.btn_enter.clicked.connect(self._accept_login)
         row_actions.addStretch()
         row_actions.addWidget(self.btn_cancel)
@@ -103,19 +107,40 @@ class UserSessionDialog(QDialog):
 
         self._reload_users()
 
+    def keyPressEvent(self, event: QKeyEvent):
+        # Esc fecha o diálogo por padrão; usuários costumam apertar Esc para “apagar” a senha
+        # e o app encerrava sem explicação (AuditShellWidget chama quit se o login falhar).
+        if event.key() == Qt.Key.Key_Escape:
+            if (self.ed_password.text() or "").strip():
+                self.ed_password.clear()
+                self.lbl_error.hide()
+                event.accept()
+                return
+        super().keyPressEvent(event)
+
+    def reject(self):
+        logging.getLogger(__name__).info("Login encerrado sem sucesso (Cancelar, Esc ou fechar janela).")
+        super().reject()
+
     def _on_password_edited(self, _t):
-        self.lbl_error.hide()
+        try:
+            self.lbl_error.hide()
+        except Exception:
+            logging.getLogger(__name__).exception("Falha ao atualizar estado do campo de senha")
 
     def _atualizar_dica_senha(self):
         if not self._logged_user:
             self.lbl_hint.setText("")
             return
         if self.service.usuario_tem_senha(self._logged_user):
-            self.lbl_hint.setText("Digite sua senha e clique em Entrar.")
+            self.lbl_hint.setText(
+                "Digite sua senha e clique em Entrar. (Esc limpa a senha; não fecha o programa enquanto houver texto.)"
+            )
         else:
             self.lbl_hint.setText(
                 "Primeiro acesso para este usuário: digite a senha que deseja usar "
-                "(mínimo 4 caracteres) e clique em Entrar — ela será salva e usada daqui em diante."
+                "(mínimo 4 caracteres) e clique em Entrar — ela será salva e usada daqui em diante. "
+                "Esc limpa o campo sem encerrar, se já houver texto."
             )
 
     def _reload_users(self):

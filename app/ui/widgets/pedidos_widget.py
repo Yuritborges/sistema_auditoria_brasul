@@ -74,6 +74,8 @@ class PedidosWidget(QWidget):
         self.dt_fim.setDisplayFormat("dd/MM/yyyy")
         self.dt_fim.setDate(today)
         self.dt_fim.setMaximumDate(today)
+        self.dt_ini.dateChanged.connect(self.aplicar_filtros)
+        self.dt_fim.dateChanged.connect(self.aplicar_filtros)
 
         def _fl(text):
             lb = QLabel(text)
@@ -168,24 +170,25 @@ class PedidosWidget(QWidget):
         self.cb_obra.addItems(obras)
 
         if comprador_atual:
-            idx = self.cb_comprador.findText(comprador_atual, Qt.MatchFixedString | Qt.MatchCaseInsensitive)
+            idx = self.cb_comprador.findText(comprador_atual, Qt.MatchFlag.MatchFixedString)
             if idx >= 0:
                 self.cb_comprador.setCurrentIndex(idx)
             else:
                 self.cb_comprador.setEditText(comprador_atual)
         if obra_atual:
-            idx = self.cb_obra.findText(obra_atual, Qt.MatchFixedString | Qt.MatchCaseInsensitive)
+            idx = self.cb_obra.findText(obra_atual, Qt.MatchFlag.MatchFixedString)
             if idx >= 0:
                 self.cb_obra.setCurrentIndex(idx)
             else:
                 self.cb_obra.setEditText(obra_atual)
         if status_atual:
-            idx = self.cb_status.findText(status_atual, Qt.MatchFixedString | Qt.MatchCaseInsensitive)
+            idx = self.cb_status.findText(status_atual, Qt.MatchFlag.MatchFixedString)
             if idx >= 0:
                 self.cb_status.setCurrentIndex(idx)
 
         self.ed_forn.setText(fornecedor_atual)
         self.ed_item.setText(item_atual)
+        self._atualizar_limites_calendario_pedidos()
         self.aplicar_filtros()
 
     def _carregar_mais_linhas(self):
@@ -216,7 +219,9 @@ class PedidosWidget(QWidget):
             if item and item not in (d.get("itens_texto") or "").upper():
                 continue
             pd = self._pedido_data(d)
-            if pd is not None and (pd < d_ini or pd > d_fim):
+            if pd is None:
+                continue
+            if pd < d_ini or pd > d_fim:
                 continue
             self._filtrados.append(d)
         self._visible_rows = min(PAGE_CHUNK, len(self._filtrados)) if self._filtrados else 0
@@ -298,19 +303,28 @@ class PedidosWidget(QWidget):
     def _fmt(self, v):
         return f"R$ {float(v or 0):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
+    def _atualizar_limites_calendario_pedidos(self):
+        hoje = QDate.currentDate()
+        mx = None
+        for d in self._dados:
+            p = self._pedido_data(d)
+            if p and (mx is None or p > mx):
+                mx = p
+        if mx is not None:
+            topo = QDate(mx.year, mx.month, mx.day)
+            cap = topo if topo > hoje else hoje
+        else:
+            cap = hoje
+        self.dt_ini.setMaximumDate(cap)
+        self.dt_fim.setMaximumDate(cap)
+
     @staticmethod
     def _qdate_to_date(qd: QDate) -> date:
         return date(qd.year(), qd.month(), qd.day())
 
-    @staticmethod
-    def _pedido_data(p):
-        dt = p.get("_data_ord")
-        if isinstance(dt, datetime):
-            return dt.date()
-        txt = (p.get("data_pedido") or "").strip()
-        for fmt in ("%d/%m/%Y", "%d/%m/%y"):
-            try:
-                return datetime.strptime(txt, fmt).date()
-            except Exception:
-                pass
-        return None
+    def _pedido_data(self, p):
+        """Mesma data que a ordenacao global (data_pedido valida, senao emitido_em)."""
+        dt = self.service._data_referencia_pedido(p)
+        if dt == datetime.min:
+            return None
+        return dt.date()

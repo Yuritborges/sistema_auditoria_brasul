@@ -2,7 +2,7 @@
 
 ## Resumo
 
-Aplicação **desktop PySide6** com SQLite (banco consolidado de pedidos + `auditoria_local.db` para usuários/orçamentos). Ponto forte: separação `service` / `repository` / `ui`. Riscos principais: **acesso a rede (Z:)** no startup (mitigado com carga leve de PDF) e **dependência de caminhos fixos** no `config.py`.
+Aplicação **desktop PySide6** com SQLite (banco consolidado de pedidos + `auditoria_local.db` para usuários e trilha de auditoria). Ponto forte: separação `service` / `repository` / `ui`. Riscos principais: **acesso a rede (Z:)** no startup (mitigado com carga leve de PDF) e **dependência de caminhos fixos** no `config.py`.
 
 ---
 

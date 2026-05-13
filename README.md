@@ -1,5 +1,7 @@
 # Sistema de Auditoria Brasul
 
+**Autoria:** Marlyson Iury T Borges (ver também `AUTHORS` na raiz do repositório).
+
 Painel executivo para auditoria de pedidos de obras com foco em:
 
 - conformidade de pedidos por obra
@@ -39,6 +41,8 @@ pip install pyinstaller
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools\build_release.ps1
 ```
+
+O script faz primeiro um backup em `Z:\0 OBRAS\sistema_auditoria_brasul_BACKUP_AAAAMMDD_HHMM` (cópia completa exceto `.venv` e `__pycache__`), depois o PyInstaller, `releases\…` e `current\`.
 
 Ou execute `ATUALIZAR_AUDITORIA.bat` na raiz do projeto (faz o mesmo build e copia para `current\`).
 
@@ -82,9 +86,11 @@ cd "Z:\0 OBRAS\sistema_de_pedidos_brasulv2"
 .\.venv\Scripts\python.exe tools\consolidar_rede.py
 ```
 
+No **Sistema de Auditoria**, o botão da barra lateral **«Atualizar pedidos (rede)»** executa o mesmo script (se existir em `Z:\0 OBRAS\sistema_de_pedidos_brasulv2\tools\`) e em seguida recarrega o `cotacao_rede.db`. Caminhos alternativos: variáveis `AUDITORIA_CONSOLIDAR_SCRIPT` e opcionalmente `AUDITORIA_CONSOLIDAR_PYTHON`.
+
 Feche o sistema de pedidos nas máquinas se o script acusar banco em uso. Depois de consolidar, reabra a auditoria (ou use *Atualizar* / recarregar se existir) para ver pedidos novos.
 
-**Cadastro de obras (módulo orçamentos):** as obras também são lidas de `brasul_pedidos\cadastros_compartilhados\obras.json`, alinhado ao sistema de pedidos.
+**Cadastro de obras:** na consulta por obra, os nomes vêm dos pedidos consolidados e, quando existir, de `brasul_pedidos\cadastros_compartilhados\obras.json`, alinhado ao sistema de pedidos.
 
 Se nao encontrar banco, abre em modo demonstracao para permitir validacao de layout e fluxo.
 

@@ -105,7 +105,7 @@ class BrasulComboBox(QComboBox):
 
         comp = QCompleter(self.model(), self)
         comp.setCaseSensitivity(Qt.CaseInsensitive)
-        comp.setFilterMode(Qt.MatchContains)
+        comp.setFilterMode(Qt.MatchFlag.MatchContains)
         comp.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
         self.setCompleter(comp)
 
@@ -119,13 +119,13 @@ class BrasulComboBox(QComboBox):
         txt = (self.currentText() or "").strip()
         if not txt:
             return
-        idx = self.findText(txt, Qt.MatchFixedString | Qt.MatchCaseSensitive)
+        idx = self.findText(txt, Qt.MatchFlag.MatchFixedString | Qt.MatchFlag.MatchCaseSensitive)
         if idx < 0:
-            idx = self.findText(txt, Qt.MatchFixedString | Qt.MatchCaseInsensitive)
+            idx = self.findText(txt, Qt.MatchFlag.MatchFixedString)
         if idx < 0:
-            idx = self.findText(txt, Qt.MatchStartsWith | Qt.MatchCaseInsensitive)
+            idx = self.findText(txt, Qt.MatchFlag.MatchStartsWith)
         if idx < 0:
-            idx = self.findText(txt, Qt.MatchContains | Qt.MatchCaseInsensitive)
+            idx = self.findText(txt, Qt.MatchFlag.MatchContains)
         if idx >= 0 and idx != self.currentIndex():
             self.setCurrentIndex(idx)
 

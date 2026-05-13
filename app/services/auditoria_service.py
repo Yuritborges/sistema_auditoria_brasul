@@ -1,5 +1,9 @@
 import os
-from datetime import datetime
+import shutil
+import subprocess
+import sys
+import tempfile
+from datetime import date, datetime
 import re
 import json
 import csv
@@ -8,7 +12,8 @@ import logging
 
 from app.config import (
     BASE_DIR,
-    OBRAS_JSON_PATH,
+    AUDITORIA_DB_COPY_ON_FORCE_RELOAD,
+    resolve_consolidar_argv,
     resolve_db_path,
     resolve_pdf_roots,
     pdf_index_cache_path,
@@ -28,6 +33,7 @@ class AuditoriaService:
         self._cache_origem = ""
         self._cache_db_path = ""
         self._cache_db_mtime = None
+        self._cache_db_size = None
         self._pdf_exists_cache = {}
         self._summary_cache = {}
         self._data_version = 0
@@ -40,10 +46,52 @@ class AuditoriaService:
         if not os.path.isfile(db_path):
             return False
         try:
-            mtime = os.path.getmtime(db_path)
-            return db_path == self._cache_db_path and mtime == self._cache_db_mtime
+            st = os.stat(db_path)
+            return (
+                db_path == self._cache_db_path
+                and st.st_mtime == self._cache_db_mtime
+                and st.st_size == self._cache_db_size
+            )
         except OSError:
             return False
+
+    def invalidate_consolidated_cache(self):
+        """O próximo carregar(force=False) ignora a snapshot em RAM e volta a abrir o .db no disco.
+
+        Usado pelo polling periódico: em pastas de rede o stat(mtime/size) pode ficar obsoleto
+        enquanto o SQLite já tem linhas novas; sem isto o timer de 30s parece «não fazer nada».
+        """
+        self._cache_dados = None
+        self._cache_db_mtime = None
+        self._cache_db_size = None
+
+    def sincronizar_consolidado_pedidos(self):
+        """Corre o consolidar_rede do sistema de pedidos (mesma pasta Z:\\0 OBRAS) e devolve (ok, mensagem_erro)."""
+        argv = resolve_consolidar_argv()
+        if not argv:
+            return False, "consolidar_rede.py nao encontrado. Defina AUDITORIA_CONSOLIDAR_SCRIPT."
+        cwd = os.path.dirname(argv[1])
+        run_kw = {
+            "args": argv,
+            "cwd": cwd,
+            "capture_output": True,
+            "text": True,
+            "timeout": 900,
+        }
+        if sys.platform == "win32":
+            run_kw["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        try:
+            cp = subprocess.run(**run_kw)
+        except subprocess.TimeoutExpired:
+            return False, "Tempo esgotado (15 min) ao consolidar."
+        except OSError as e:
+            return False, str(e)
+        if cp.returncode != 0:
+            tail = (cp.stderr or cp.stdout or "").strip()
+            if len(tail) > 1500:
+                tail = tail[-1500:]
+            return False, tail or f"Consolidacao terminou com codigo {cp.returncode}."
+        return True, ""
 
     def carregar(self, force=False):
         db_path = resolve_db_path()
@@ -53,13 +101,42 @@ class AuditoriaService:
         self._pdf_exists_cache = {}
         self._summary_cache = {}
 
-        if db_path:
-            repo = AuditoriaRepository(db_path)
-            dados = repo.listar_pedidos()
-            origem = f"Banco real: {db_path}"
-        else:
-            dados = self._dados_demo()
-            origem = "Modo demonstracao: banco consolidado nao encontrado"
+        tmp_db = None
+        read_path = db_path
+        if db_path and os.path.isfile(db_path) and force and AUDITORIA_DB_COPY_ON_FORCE_RELOAD:
+            try:
+                fd, tmp_db = tempfile.mkstemp(prefix="auditoria_cotacao_", suffix=".db")
+                os.close(fd)
+                shutil.copy2(db_path, tmp_db)
+                read_path = tmp_db
+                self.logger.info(
+                    "Banco consolidado lido a partir de copia local temporaria (evita cache SMB). Origem: %s",
+                    db_path,
+                )
+            except OSError:
+                self.logger.exception("Falha ao copiar banco para temporario; leitura direta do caminho de rede")
+                if tmp_db:
+                    try:
+                        os.remove(tmp_db)
+                    except OSError:
+                        pass
+                    tmp_db = None
+                read_path = db_path
+
+        try:
+            if read_path:
+                repo = AuditoriaRepository(read_path)
+                dados = repo.listar_pedidos()
+                origem = f"Banco real: {db_path}"
+            else:
+                dados = self._dados_demo()
+                origem = "Modo demonstracao: banco consolidado nao encontrado"
+        finally:
+            if tmp_db:
+                try:
+                    os.remove(tmp_db)
+                except OSError:
+                    self.logger.warning("Nao foi possivel apagar temporario %s", tmp_db)
 
         # Evita milhares de os.path.exists na rede durante o primeiro paint — só valida em buscas/abrir PDF.
         self._bulk_pdf_resolve = True
@@ -75,14 +152,18 @@ class AuditoriaService:
         self._summary_cache = {}
         if db_path and os.path.isfile(db_path):
             try:
+                st = os.stat(db_path)
                 self._cache_db_path = db_path
-                self._cache_db_mtime = os.path.getmtime(db_path)
+                self._cache_db_mtime = st.st_mtime
+                self._cache_db_size = st.st_size
             except OSError:
                 self._cache_db_path = db_path
                 self._cache_db_mtime = None
+                self._cache_db_size = None
         else:
             self._cache_db_path = ""
             self._cache_db_mtime = None
+            self._cache_db_size = None
         return [dict(item) for item in dados], origem
 
     def _enriquecer_item(self, item):
@@ -107,7 +188,14 @@ class AuditoriaService:
 
     def _parse_data_bruta(self, texto):
         """Parse flexivel: brasileiro DD/MM/AAAA ou ISO (como gravado pelo SQLite/pedidos)."""
-        txt = (texto or "").strip()
+        if isinstance(texto, datetime):
+            dt = texto
+            if dt.tzinfo is not None:
+                dt = dt.astimezone().replace(tzinfo=None)
+            return dt
+        if isinstance(texto, date):
+            return datetime.combine(texto, datetime.min.time())
+        txt = (texto if isinstance(texto, str) else str(texto or "")).strip()
         if not txt:
             return datetime.min
         fmts = (
@@ -662,132 +750,6 @@ class AuditoriaService:
         }
         self._summary_cache[cache_key] = out
         return out
-
-    def salvar_orcamento(self, obra, valor_previsto, usuario):
-        self.audit_store.upsert_budget(obra, valor_previsto)
-        self.audit_store.log("orcamentos_obra", obra, "UPSERT", "valor_previsto", "", valor_previsto, usuario)
-
-    def listar_orcamentos_com_consumo(self, dados):
-        gastos = {}
-        for p in dados:
-            obra = (p.get("obra_nome") or "SEM OBRA").strip() or "SEM OBRA"
-            gastos[obra] = gastos.get(obra, 0.0) + float(p.get("valor_total") or 0)
-
-        obras_base, previstos_base = self._carregar_orcamentos_base_pedidos()
-        for obra in obras_base:
-            gastos.setdefault(obra, 0.0)
-
-        locais = {o["obra"]: float(o["valor_previsto"] or 0) for o in self.audit_store.list_budgets()}
-        todos_orcamentos = dict(previstos_base)
-        todos_orcamentos.update(locais)
-
-        out = []
-        for obra in sorted(gastos.keys()):
-            previsto = float(todos_orcamentos.get(obra, 0) or 0)
-            gasto = gastos.get(obra, 0.0)
-            consumo = (gasto / previsto * 100) if previsto > 0 else 0
-            alerta = "SEM PREVISTO" if previsto <= 0 else "OK"
-            if previsto > 0:
-                if consumo >= 100:
-                    alerta = "CRITICO"
-                elif consumo >= 90:
-                    alerta = "ALTO"
-                elif consumo >= 80:
-                    alerta = "ATENCAO"
-            out.append(
-                {
-                    "obra": obra,
-                    "previsto": previsto,
-                    "gasto": gasto,
-                    "saldo": previsto - gasto,
-                    "consumo": consumo,
-                    "alerta": alerta,
-                }
-            )
-        return out
-
-    def _nomes_obras_cadastro_json(self):
-        """Chaves de obras.json (mesma fonte do sistema de pedidos)."""
-        path = OBRAS_JSON_PATH
-        if not path or not os.path.exists(path):
-            return set()
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            if not isinstance(data, dict):
-                return set()
-            return {k.strip() for k in data.keys() if isinstance(k, str) and k.strip()}
-        except Exception:
-            self.logger.exception("Falha ao ler obras.json")
-            return set()
-
-    def _carregar_orcamentos_base_pedidos(self):
-        # Base consolidada (pedidos de todos os compradores). Não parsear config.py do outro repositório:
-        # lá o DATABASE_PATH é montado com os.path.join + usuário (BRASUL_USUARIO).
-        db_path = self._resolver_db_programa_pedidos()
-        if not db_path or not os.path.exists(db_path):
-            obras_json = self._nomes_obras_cadastro_json()
-            return sorted(obras_json), {}
-
-        obras = set()
-        obras |= self._nomes_obras_cadastro_json()
-        previstos = {}
-        conn = sqlite3.connect(db_path)
-        try:
-            conn.row_factory = sqlite3.Row
-            # Obras cadastradas no SQLite (quando existir no arquivo aberto).
-            try:
-                rows_obras = conn.execute("SELECT nome FROM obras").fetchall()
-                for r in rows_obras:
-                    nome = (r["nome"] or "").strip()
-                    if nome:
-                        obras.add(nome)
-            except Exception:
-                self.logger.exception("Falha lendo obras do db principal")
-
-            # Obras efetivamente usadas em pedidos.
-            try:
-                rows_ped = conn.execute("SELECT DISTINCT obra_nome FROM pedidos").fetchall()
-                for r in rows_ped:
-                    nome = (r["obra_nome"] or "").strip()
-                    if nome:
-                        obras.add(nome)
-            except Exception:
-                self.logger.exception("Falha lendo obras de pedidos")
-
-            # Se existir tabela de orçamento no banco principal no futuro, já suporta.
-            tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
-            if "orcamentos_obra" in tables:
-                try:
-                    rows_orc = conn.execute("SELECT obra, valor_previsto FROM orcamentos_obra").fetchall()
-                    for r in rows_orc:
-                        obra = (r["obra"] or "").strip()
-                        if obra:
-                            previstos[obra] = float(r["valor_previsto"] or 0)
-                            obras.add(obra)
-                except Exception:
-                    self.logger.exception("Falha lendo orçamentos do db principal")
-        finally:
-            conn.close()
-
-        return sorted(obras), previstos
-
-    def _resolver_db_programa_pedidos(self):
-        return resolve_db_path()
-
-    def alertas_automaticos(self, dados):
-        alertas = []
-        media = (sum(float(p.get("valor_total") or 0) for p in dados) / len(dados)) if dados else 0
-        for p in dados:
-            numero = p.get("numero") or ""
-            valor = float(p.get("valor_total") or 0)
-            if p.get("sem_pdf"):
-                alertas.append(("Sem PDF", f"Pedido {numero} sem anexo PDF"))
-            if not (p.get("fornecedor_nome") or "").strip():
-                alertas.append(("Sem fornecedor", f"Pedido {numero} sem fornecedor"))
-            if media > 0 and valor > media * 3:
-                alertas.append(("Valor alto", f"Pedido {numero} acima de 3x da media"))
-        return alertas
 
     def registrar_auditoria(self, entidade, entidade_id, acao, campo, anterior, novo, usuario):
         self.audit_store.log(entidade, entidade_id, acao, campo, anterior, novo, usuario)

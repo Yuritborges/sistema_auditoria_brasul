@@ -1,3 +1,8 @@
+"""
+Sistema de Auditoria Brasul — ponto de entrada da aplicação.
+
+Autoria / manutenção principal: Marlyson Iury T Borges
+"""
 import sys
 import os
 import ctypes
@@ -36,17 +41,27 @@ def main():
             logging.getLogger(__name__).exception("Falha ao configurar AppUserModelID do Windows")
 
     app = QApplication(sys.argv)
+    app.setApplicationName("SistemaAuditoriaBrasul")
+    app.setApplicationDisplayName("Sistema de Auditoria Brasul")
+    app.setOrganizationName("Brasul")
     # Fusion aplica melhor QSS no Windows (barras de rolagem legíveis, menos artefatos visuais).
     app.setStyle("Fusion")
     # Aplica identidade visual global (inclui popups/combobox/messagebox).
     app.setStyleSheet(APP_STYLESHEET)
+    log = logging.getLogger(__name__)
     icon_path = resolve_app_icon_path()
+    ic = QIcon()
     if icon_path:
         ic = QIcon(icon_path)
-        app.setWindowIcon(ic)
+        if ic.isNull():
+            log.warning("Icone nao carregado (QIcon null): %s", icon_path)
+        else:
+            app.setWindowIcon(ic)
+    else:
+        log.warning("Nenhum icone encontrado (ASSETS / PyInstaller _MEIPASS).")
     win = MainWindowPatrao()
-    if icon_path:
-        win.setWindowIcon(QIcon(icon_path))
+    if not ic.isNull():
+        win.setWindowIcon(ic)
     win.show()
     sys.exit(app.exec())
 

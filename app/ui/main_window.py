@@ -1,5 +1,5 @@
 from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QMainWindow
+from PySide6.QtWidgets import QApplication, QMainWindow
 
 from app.config import resolve_app_icon_path
 from app.services.auditoria_service import AuditoriaService
@@ -26,6 +26,18 @@ class MainWindowPatrao(QMainWindow):
         self.service = AuditoriaService()
         self.audit_shell = AuditShellWidget(self.service)
         self.setCentralWidget(self.audit_shell)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        # Windows: reforça o ícone na barra de tarefas após a janela nativa existir (evita ícone genérico).
+        icon_path = resolve_app_icon_path()
+        if icon_path:
+            ic = QIcon(icon_path)
+            if not ic.isNull():
+                self.setWindowIcon(ic)
+                app = QApplication.instance()
+                if app is not None:
+                    app.setWindowIcon(ic)
 
     def closeEvent(self, event):
         try:

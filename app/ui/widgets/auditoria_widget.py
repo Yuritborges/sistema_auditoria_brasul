@@ -30,7 +30,7 @@ class AuditoriaWidget(QWidget):
         hero.setSpacing(4)
         ht = QLabel("Histórico de alterações")
         ht.setObjectName("moduleHeroTitle")
-        hd = QLabel("Trilha local de inclusões e ajustes (orçamentos, usuários e demais entidades).")
+        hd = QLabel("Trilha local de inclusões e ajustes (usuários e demais entidades).")
         hd.setObjectName("moduleHeroDesc")
         hero.addWidget(ht)
         hero.addWidget(hd)

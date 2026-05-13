@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -54,7 +55,9 @@ class FornecedoresWidget(QWidget):
         fl = QLabel("Fornecedor")
         fl.setObjectName("fieldLabel")
         self.cb = BrasulComboBox()
-        self.cb.setEditable(False)
+        lo_f = self.cb.lineEdit()
+        if lo_f is not None:
+            lo_f.setPlaceholderText("Buscar ou selecionar fornecedor…")
         btn = QPushButton("Analisar")
         btn.clicked.connect(self._analisar)
         top.addWidget(fl)
@@ -94,7 +97,10 @@ class FornecedoresWidget(QWidget):
         self.dt_fim.dateChanged.connect(self._limitar_periodo)
 
         self.cb_obra = BrasulComboBox()
-        self.cb_obra.setEditable(False)
+        lo_o = self.cb_obra.lineEdit()
+        if lo_o is not None:
+            lo_o.setPlaceholderText("TODAS ou digite para buscar obra…")
+        # Obra: combo editável + completer (igual módulo Obras).
         self.ed_pedido = QLineEdit()
         self.ed_pedido.setPlaceholderText("Nº do pedido (contém)…")
         self.ed_empresa = QLineEdit()
@@ -210,6 +216,47 @@ class FornecedoresWidget(QWidget):
 
         root.addLayout(split, 1)
 
+        self._garantir_combo_digitavel(self.cb)
+
+    @staticmethod
+    def _garantir_combo_digitavel(combo: BrasulComboBox) -> None:
+        """Parent desativado (ex.: cartão do dashboard) pode deixar o lineEdit do combo como somente leitura."""
+        combo.setEditable(True)
+        le = combo.lineEdit()
+        if le is None:
+            return
+        le.setReadOnly(False)
+        le.setEnabled(True)
+        le.setFocusPolicy(Qt.StrongFocus)
+
+    def _casar_fornecedor_no_combo(self) -> bool:
+        txt = (self.cb.currentText() or "").strip()
+        if not txt or txt == _PLACEHOLDER_FORN:
+            return False
+        for mode in (
+            Qt.MatchFlag.MatchFixedString,
+            Qt.MatchFlag.MatchContains,
+        ):
+            idx = self.cb.findText(txt, mode)
+            if idx >= 0 and self.cb.itemText(idx) != _PLACEHOLDER_FORN:
+                self.cb.setCurrentIndex(idx)
+                return True
+        t_u = txt.upper()
+        for i in range(self.cb.count()):
+            label = self.cb.itemText(i)
+            if not label or label == _PLACEHOLDER_FORN:
+                continue
+            if t_u in label.upper():
+                self.cb.setCurrentIndex(i)
+                return True
+        QMessageBox.warning(
+            self,
+            "Fornecedor",
+            "Não foi encontrado fornecedor com esse nome na base.\n"
+            "Digite parte do nome para filtrar a lista ou escolha um item pela seta.",
+        )
+        return False
+
     def set_data(self, dados):
         forn_atual = (self.cb.currentText() or "").strip()
         ok_forn = bool(forn_atual and forn_atual != _PLACEHOLDER_FORN)
@@ -275,10 +322,13 @@ class FornecedoresWidget(QWidget):
         self.tbl_obra.setRowCount(0)
 
     def _analisar(self):
-        fornecedor = self.cb.currentText()
-        if not fornecedor or fornecedor == _PLACEHOLDER_FORN:
+        txt = (self.cb.currentText() or "").strip()
+        if not txt or txt == _PLACEHOLDER_FORN:
             self._limpar_analise()
             return
+        if not self._casar_fornecedor_no_combo():
+            return
+        fornecedor = self.cb.currentText().strip()
 
         pending = self._pending_filtro_restore
         self._pending_filtro_restore = None
@@ -305,6 +355,8 @@ class FornecedoresWidget(QWidget):
 
         self._popular_obra_combo(obra_pref)
         self.dash_card.setEnabled(True)
+        self._garantir_combo_digitavel(self.cb)
+        self._garantir_combo_digitavel(self.cb_obra)
         self._aplicar_filtros_dashboard()
 
     def _popular_obra_combo(self, obra_preferida: str):
@@ -316,13 +368,17 @@ class FornecedoresWidget(QWidget):
         )
         self.cb_obra.addItems(obras)
         pref = (obra_preferida or "").strip() or "TODAS"
-        idx = self.cb_obra.findText(pref, Qt.MatchFixedString | Qt.MatchCaseSensitive)
+        idx = self.cb_obra.findText(pref, Qt.MatchFlag.MatchFixedString | Qt.MatchFlag.MatchCaseSensitive)
         if idx < 0:
-            idx = self.cb_obra.findText(pref, Qt.MatchFixedString | Qt.MatchCaseInsensitive)
-        if idx < 0:
-            idx = 0
-        self.cb_obra.setCurrentIndex(idx)
+            idx = self.cb_obra.findText(pref, Qt.MatchFlag.MatchFixedString)
+        if idx >= 0:
+            self.cb_obra.setCurrentIndex(idx)
+        else:
+            self.cb_obra.setCurrentIndex(0)
+            if pref.upper() != "TODAS":
+                self.cb_obra.setEditText(obra_preferida.strip())
         self.cb_obra.blockSignals(False)
+        self._garantir_combo_digitavel(self.cb_obra)
 
     def _default_period_from_rows(self):
         today = QDate.currentDate()
@@ -394,6 +450,7 @@ class FornecedoresWidget(QWidget):
         obra_f = (self.cb_obra.currentText() or "").strip()
         ped_f = (self.ed_pedido.text() or "").strip().upper()
         emp_f = (self.ed_empresa.text() or "").strip().upper()
+        obra_fu = obra_f.upper()
 
         out = []
         for p in self._rows_base:
@@ -405,8 +462,9 @@ class FornecedoresWidget(QWidget):
                 continue
 
             on = (p.get("obra_nome") or "").strip()
-            if obra_f and obra_f != "TODAS" and on.upper() != obra_f.upper():
-                continue
+            if obra_fu and obra_fu != "TODAS":
+                if obra_fu not in on.upper():
+                    continue
 
             num = str(p.get("numero") or "").strip().upper()
             if ped_f and ped_f not in num:

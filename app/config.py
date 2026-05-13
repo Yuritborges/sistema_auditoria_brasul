@@ -38,6 +38,12 @@ LOGOS_DIR = os.path.join(ASSETS_DIR, "logos")
 
 def resolve_app_icon_path():
     """Arquivo de ícone para QApplication / janela (caminho absoluto)."""
+    if getattr(sys, "frozen", False):
+        meipass = getattr(sys, "_MEIPASS", None) or ""
+        if meipass:
+            p = os.path.join(meipass, "assets", "iconebrasul2.ico")
+            if os.path.isfile(p):
+                return os.path.abspath(p)
     for name in ("iconebrasul2.ico", "iconebrasul.png"):
         p = os.path.join(ASSETS_DIR, name)
         if os.path.isfile(p):
@@ -97,6 +103,17 @@ def resolve_db_path():
     return ""
 
 
+# Ao clicar «Recarregar dados» (carregar force=True), copiar o .db para ficheiro temporário local
+# antes do SQLite abrir — reduz leituras «fantasma» do ficheiro antigo em pastas de rede (SMB).
+AUDITORIA_DB_COPY_ON_FORCE_RELOAD = os.environ.get(
+    "AUDITORIA_DB_COPY_ON_FORCE_RELOAD", "1"
+).strip().lower() in ("1", "true", "sim", "yes")
+
+# Polling silencioso da UI (ms). 0 desativa. Ver AuditShellWidget._auto_recarregar.
+# Ex.: set AUDITORIA_AUTO_RELOAD_MS=15000 para 15 s.
+AUDITORIA_AUTO_RELOAD_MS_DEFAULT = 30_000
+
+
 def resolve_pdf_roots():
     roots = []
     for candidate in PDF_ROOT_CANDIDATES:
@@ -109,3 +126,21 @@ def pdf_index_cache_path():
     cache_dir = os.path.join(BASE_DIR, "cache")
     os.makedirs(cache_dir, exist_ok=True)
     return os.path.join(cache_dir, "pdf_index.json")
+
+
+def resolve_consolidar_argv():
+    """[python, consolidar_rede.py] para atualizar cotacao_rede.db; None se o ficheiro não existir.
+
+    AUDITORIA_CONSOLIDAR_SCRIPT — caminho absoluto do consolidar_rede.py (opcional).
+    AUDITORIA_CONSOLIDAR_PYTHON — intérprete a usar (opcional; por defeito o mesmo que corre a auditoria).
+    """
+    script = os.environ.get("AUDITORIA_CONSOLIDAR_SCRIPT", "").strip()
+    py = os.environ.get("AUDITORIA_CONSOLIDAR_PYTHON", "").strip() or sys.executable
+    if script and os.path.isfile(script):
+        return [py, os.path.abspath(script)]
+    ob = os.path.dirname(BASE_REDE_PEDIDOS)
+    for folder in ("sistema_de_pedidos_brasulv2", "sistema_de_pedidos_brasul"):
+        cand = os.path.join(ob, folder, "tools", "consolidar_rede.py")
+        if os.path.isfile(cand):
+            return [py, os.path.abspath(cand)]
+    return None

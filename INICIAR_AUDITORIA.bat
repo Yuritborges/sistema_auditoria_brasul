@@ -5,5 +5,9 @@ if exist "%~dp0current\SISTEMA AUDITORIA BRASUL.exe" (
   start "" "%~dp0current\SISTEMA AUDITORIA BRASUL.exe"
   goto :eof
 )
+if exist "%~dp0dist\SISTEMA AUDITORIA BRASUL\SISTEMA AUDITORIA BRASUL.exe" (
+  start "" "%~dp0dist\SISTEMA AUDITORIA BRASUL\SISTEMA AUDITORIA BRASUL.exe"
+  goto :eof
+)
 python main.py
 pause

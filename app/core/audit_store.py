@@ -294,11 +294,14 @@ class AuditStore:
             conn.close()
 
     def verify_user_password(self, nome, senha):
+        nome = (nome or "").strip().upper()
+        if not nome:
+            return False
         conn = self._connect()
         try:
             row = conn.execute(
                 "SELECT senha_hash FROM usuarios WHERE UPPER(TRIM(nome))=? AND ativo=1",
-                (nome.strip().upper(),),
+                (nome,),
             ).fetchone()
             if not row:
                 return False
@@ -310,11 +313,14 @@ class AuditStore:
             conn.close()
 
     def user_has_password(self, nome):
+        nome = (nome or "").strip().upper()
+        if not nome:
+            return False
         conn = self._connect()
         try:
             row = conn.execute(
                 "SELECT senha_hash FROM usuarios WHERE UPPER(TRIM(nome))=? AND ativo=1",
-                (nome.strip().upper(),),
+                (nome,),
             ).fetchone()
             if not row:
                 return False
@@ -323,11 +329,14 @@ class AuditStore:
             conn.close()
 
     def set_user_password(self, nome, senha):
+        nome = (nome or "").strip().upper()
+        if not nome:
+            return
         conn = self._connect()
         try:
             conn.execute(
                 "UPDATE usuarios SET senha_hash=? WHERE UPPER(TRIM(nome))=?",
-                (self._hash_password(senha), nome.strip().upper()),
+                (self._hash_password(senha), nome),
             )
             conn.commit()
         finally:
@@ -335,11 +344,14 @@ class AuditStore:
 
     def clear_user_password(self, nome):
         """Remove o hash para o usuario voltar ao fluxo de primeiro acesso (definir senha no login)."""
+        nome = (nome or "").strip().upper()
+        if not nome:
+            return
         conn = self._connect()
         try:
             conn.execute(
                 "UPDATE usuarios SET senha_hash=? WHERE UPPER(TRIM(nome))=?",
-                ("", nome.strip().upper()),
+                ("", nome),
             )
             conn.commit()
         finally:

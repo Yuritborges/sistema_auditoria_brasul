@@ -1,4 +1,4 @@
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QDate, Qt
 from PySide6.QtGui import QColor, QPalette
 from PySide6.QtWidgets import QCalendarWidget, QDateEdit, QDialog, QHBoxLayout, QPushButton, QVBoxLayout, QWidget
 
@@ -97,6 +97,8 @@ class BrasulDateEdit(QDateEdit):
 
         cal = QCalendarWidget(dlg)
         cal.setSelectedDate(self.date())
+        cap = self.maximumDate()
+        cal.setMaximumDate(cap if cap.isValid() else QDate.currentDate())
         cal.setGridVisible(False)
         cal.setVerticalHeaderFormat(QCalendarWidget.NoVerticalHeader)
         cal.setStyleSheet(self.calendarWidget().styleSheet())

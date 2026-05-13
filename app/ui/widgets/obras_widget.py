@@ -69,6 +69,8 @@ class ObrasWidget(QWidget):
         self.dt_fim.setMaximumDate(today)
         self.dt_ini.dateChanged.connect(self._limitar_periodo)
         self.dt_fim.dateChanged.connect(self._limitar_periodo)
+        self.dt_ini.dateChanged.connect(self._aplicar)
+        self.dt_fim.dateChanged.connect(self._aplicar)
 
         btn = QPushButton("Aplicar")
         btn.clicked.connect(self._aplicar)
@@ -176,18 +178,11 @@ class ObrasWidget(QWidget):
     def _qdate_to_date(qd: QDate) -> date:
         return date(qd.year(), qd.month(), qd.day())
 
-    @staticmethod
-    def _pedido_data(p) -> Optional[date]:
-        dt = p.get("_data_ord")
-        if isinstance(dt, datetime):
-            return dt.date()
-        txt = (p.get("data_pedido") or "").strip()
-        for fmt in ("%d/%m/%Y", "%d/%m/%y"):
-            try:
-                return datetime.strptime(txt, fmt).date()
-            except ValueError:
-                continue
-        return None
+    def _pedido_data(self, p) -> Optional[date]:
+        ref = self.service._data_referencia_pedido(p)
+        if ref == datetime.min:
+            return None
+        return ref.date()
 
     def set_data(self, dados):
         obra_atual = (self.cb_obra.currentText() or "").strip()
@@ -205,9 +200,9 @@ class ObrasWidget(QWidget):
         self.cb_obra.addItems(obras)
 
         if obra_atual:
-            idx = self.cb_obra.findText(obra_atual, Qt.MatchFixedString | Qt.MatchCaseSensitive)
+            idx = self.cb_obra.findText(obra_atual, Qt.MatchFlag.MatchFixedString | Qt.MatchFlag.MatchCaseSensitive)
             if idx < 0:
-                idx = self.cb_obra.findText(obra_atual, Qt.MatchFixedString | Qt.MatchCaseInsensitive)
+                idx = self.cb_obra.findText(obra_atual, Qt.MatchFlag.MatchFixedString)
             if idx >= 0:
                 self.cb_obra.setCurrentIndex(idx)
             else:
@@ -243,7 +238,9 @@ class ObrasWidget(QWidget):
             if comprador and comprador not in (d.get("comprador") or "").upper():
                 continue
             pd = self._pedido_data(d)
-            if pd is not None and (pd < d_ini or pd > d_fim):
+            if pd is None:
+                continue
+            if pd < d_ini or pd > d_fim:
                 continue
             filtrados.append(d)
         obra_ref = obra if obra != "TODAS" else (filtrados[0].get("obra_nome") if filtrados else "")
