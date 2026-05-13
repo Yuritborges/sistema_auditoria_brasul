@@ -69,7 +69,16 @@ class AuditoriaService:
         """Corre o consolidar_rede do sistema de pedidos (mesma pasta Z:\\0 OBRAS) e devolve (ok, mensagem_erro)."""
         argv = resolve_consolidar_argv()
         if not argv:
-            return False, "consolidar_rede.py nao encontrado. Defina AUDITORIA_CONSOLIDAR_SCRIPT."
+            return False, (
+                "Consolidador nao disponivel: consolidar_rede.py nao encontrado ou falta python.exe "
+                "(em .exe empacotado use AUDITORIA_CONSOLIDAR_PYTHON ou .venv na pasta do projeto na rede)."
+            )
+        exe0 = os.path.normcase(os.path.abspath(argv[0]))
+        if getattr(sys, "frozen", False) and exe0 == os.path.normcase(os.path.abspath(sys.executable)):
+            return (
+                False,
+                "Configuracao invalida: o primeiro argumento do subprocesso nao pode ser o .exe da auditoria.",
+            )
         cwd = os.path.dirname(argv[1])
         run_kw = {
             "args": argv,

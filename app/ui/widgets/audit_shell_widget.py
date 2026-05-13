@@ -89,27 +89,43 @@ class AuditShellWidget(QWidget):
         QTimer.singleShot(0, lambda: self.recarregar(force=False))
 
     def _sincronizar_pedidos_rede(self):
-        if not resolve_consolidar_argv():
+        """Tenta consolidar Iury+Thamyres → cotacao_rede.db; em qualquer caso atualiza os dados nesta janela."""
+        argv = resolve_consolidar_argv()
+        consolidou_ok = False
+        err_consolid = ""
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            if argv:
+                consolidou_ok, err_consolid = self.service.sincronizar_consolidado_pedidos()
+        finally:
+            QApplication.restoreOverrideCursor()
+
+        # Sempre: mesma instância do programa, mesma sessão — só relê o .db na rede.
+        self.service.invalidate_consolidated_cache()
+        self.recarregar(force=True)
+
+        if argv and consolidou_ok:
+            QMessageBox.information(
+                self,
+                "Pedidos (rede)",
+                "Consolidação concluída e a lista neste painel foi atualizada.",
+            )
+        elif argv and not consolidou_ok:
             QMessageBox.warning(
                 self,
                 "Consolidação",
-                "Não foi possível preparar o comando de consolidação.\n\n"
-                "• Confirme que existe tools\\consolidar_rede.py no sistema de pedidos (rede), ou defina "
-                "AUDITORIA_CONSOLIDAR_SCRIPT.\n"
-                "• Se abre a auditoria pelo .exe empacotado, defina AUDITORIA_CONSOLIDAR_PYTHON com o caminho "
-                "para python.exe (ex.: …\\sistema_de_pedidos_brasulv2\\.venv\\Scripts\\python.exe) "
-                "ou mantenha um .venv nessa pasta na rede.",
+                (err_consolid or "Falha ao executar o consolidador.")
+                + "\n\nOs dados foram recarregados a partir do ficheiro atual na rede (esta janela).",
             )
-            return
-        QApplication.setOverrideCursor(Qt.WaitCursor)
-        try:
-            ok, err = self.service.sincronizar_consolidado_pedidos()
-            if ok:
-                self.recarregar(force=True)
-            else:
-                QMessageBox.warning(self, "Consolidação", err or "Falha desconhecida.")
-        finally:
-            QApplication.restoreOverrideCursor()
+        else:
+            QMessageBox.information(
+                self,
+                "Dados atualizados",
+                "Não foi possível correr o consolidador automático neste PC (falta "
+                "tools\\consolidar_rede.py na rede ou um python.exe — ver AUDITORIA_CONSOLIDAR_PYTHON "
+                "e .venv em sistema_de_pedidos_brasulv2).\n\n"
+                "Os pedidos visíveis foram atualizados a partir do cotacao_rede.db já existente.",
+            )
 
     def _ask_session_user(self):
         log = logging.getLogger(__name__)
