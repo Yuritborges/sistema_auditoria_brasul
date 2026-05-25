@@ -13,7 +13,10 @@ from PySide6.QtWidgets import (
 )
 
 from app.core.auth import normalize_profile
+from app.ui.app_icon import criar_icone_aplicativo
 from app.ui.branding import scaled_logo_pixmap
+from app.ui.win_icon import aplicar_icone_janela_win32
+from app.config import resolve_app_icon_path
 from app.ui.style import APP_STYLESHEET
 
 
@@ -30,7 +33,16 @@ class UserSessionDialog(QDialog):
         self._users = users or []
         self._logged_user = ""
         self._logged_profile = "COMPRADOR"
+        ic = criar_icone_aplicativo()
+        if not ic.isNull():
+            self.setWindowIcon(ic)
         self._build()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        path = resolve_app_icon_path()
+        if path:
+            aplicar_icone_janela_win32(self, path)
 
     def _build(self):
         root = QVBoxLayout(self)
@@ -44,7 +56,7 @@ class UserSessionDialog(QDialog):
 
         logo = QLabel()
         logo.setObjectName("loginLogo")
-        pix = scaled_logo_pixmap(160, 54)
+        pix = scaled_logo_pixmap(300, 72)
         if pix is not None:
             logo.setPixmap(pix)
         else:
@@ -133,14 +145,11 @@ class UserSessionDialog(QDialog):
             self.lbl_hint.setText("")
             return
         if self.service.usuario_tem_senha(self._logged_user):
-            self.lbl_hint.setText(
-                "Digite sua senha e clique em Entrar. (Esc limpa a senha; não fecha o programa enquanto houver texto.)"
-            )
+            self.lbl_hint.setText("Digite sua senha e clique em Entrar.")
         else:
             self.lbl_hint.setText(
-                "Primeiro acesso para este usuário: digite a senha que deseja usar "
-                "(mínimo 4 caracteres) e clique em Entrar — ela será salva e usada daqui em diante. "
-                "Esc limpa o campo sem encerrar, se já houver texto."
+                "Primeiro acesso: escolha uma senha com no mínimo 4 caracteres e clique em Entrar. "
+                "Ela ficará registrada para os próximos acessos."
             )
 
     def _reload_users(self):
@@ -173,7 +182,7 @@ class UserSessionDialog(QDialog):
     def _select_user(self, nome, perfil):
         self._logged_user = nome
         self._logged_profile = normalize_profile(perfil)
-        self.lbl_selected.setText(f"Usuário selecionado: {nome.title()}  •  Perfil: {self._logged_profile}")
+        self.lbl_selected.setText(f"Usuário selecionado: {nome.title()}")
         self.lbl_error.hide()
         self._atualizar_dica_senha()
         self.ed_password.clear()
@@ -199,20 +208,18 @@ class UserSessionDialog(QDialog):
                 return
             if not self.service.autenticar_usuario(self._logged_user, senha):
                 self.lbl_error.setText(
-                    "Senha incorreta. Confira Caps Lock e tente de novo.\n"
-                    "Esqueceu? Peça ao TI ou use: python tools/reset_admin_password.py --limpar"
+                    "A senha está incorreta. Por favor, verifique novamente.\n"
+                    "Confira se o Caps Lock está ativado e se digitou o usuário certo."
                 )
                 self.lbl_error.show()
                 self.ed_password.selectAll()
                 self.ed_password.setFocus()
                 return
             self.accept()
-        except Exception as e:
+        except Exception:
             log.exception("Falha ao autenticar")
             self.lbl_error.setText(
-                "Erro ao gravar ou validar a senha (detalhes em logs/auditoria_app.log).\n\n"
-                f"{type(e).__name__}: {e}\n\n"
-                "Verifique permissão de escrita na pasta do programa (database/)."
+                "Não foi possível validar o acesso. Tente novamente ou peça ajuda ao suporte."
             )
             self.lbl_error.show()
             self.ed_password.setFocus()

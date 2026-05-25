@@ -1,3 +1,4 @@
+import logging
 import os
 
 from PySide6.QtCore import Qt
@@ -16,6 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.ui.consulta_readonly import configurar_tabela_consulta
+from app.ui.user_messages import erro_generico, erro_salvar
 
 
 class FiscalizacaoWidget(QWidget):
@@ -155,8 +157,9 @@ class FiscalizacaoWidget(QWidget):
                 self.usuario_getter(),
             )
             self._refresh()
-        except Exception as e:
-            QMessageBox.warning(self, "Fiscalização", f"Falha ao salvar vistoria.\n\n{e}")
+        except Exception:
+            logging.getLogger(__name__).exception("Falha ao salvar vistoria")
+            QMessageBox.warning(self, "Fiscalização", erro_salvar("a vistoria"))
 
     def _abrir_rnc(self):
         try:
@@ -170,8 +173,9 @@ class FiscalizacaoWidget(QWidget):
                 self.usuario_getter(),
             )
             self._refresh()
-        except Exception as e:
-            QMessageBox.warning(self, "RNC", f"Falha ao abrir RNC.\n\n{e}")
+        except Exception:
+            logging.getLogger(__name__).exception("Falha ao registrar RNC")
+            QMessageBox.warning(self, "RNC", erro_generico("registrar a RNC"))
 
     def _anexar(self):
         try:

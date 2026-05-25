@@ -2,6 +2,8 @@ from PySide6.QtCore import QDate, Qt
 from PySide6.QtGui import QColor, QPalette
 from PySide6.QtWidgets import QCalendarWidget, QDateEdit, QDialog, QHBoxLayout, QPushButton, QVBoxLayout, QWidget
 
+from app.ui.widgets.brasul_combo import _criar_botao_seta
+
 
 class BrasulDateEdit(QDateEdit):
     def __init__(self, parent=None):
@@ -15,6 +17,22 @@ class BrasulDateEdit(QDateEdit):
         if le is not None:
             le.setCursor(Qt.PointingHandCursor)
             le.installEventFilter(self)
+
+        self._btn_cal = _criar_botao_seta(self, "brasulDateDropBtn", self._open_calendar_dialog)
+        self._reposicionar_botao_cal()
+
+    def _reposicionar_botao_cal(self):
+        if not hasattr(self, "_btn_cal"):
+            return
+        margem = 2
+        h = max(self.height() - margem * 2, 24)
+        self._btn_cal.setFixedSize(self._btn_cal.width(), h)
+        self._btn_cal.move(max(0, self.width() - self._btn_cal.width() - margem), margem)
+        self._btn_cal.raise_()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._reposicionar_botao_cal()
 
     def _polish_calendar(self):
         cal = self.calendarWidget()

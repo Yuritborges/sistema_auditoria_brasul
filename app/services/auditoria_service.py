@@ -12,12 +12,15 @@ import logging
 
 from app.config import (
     BASE_DIR,
+    BASE_REDE_PEDIDOS,
     AUDITORIA_DB_COPY_ON_FORCE_RELOAD,
     resolve_consolidar_argv,
     resolve_db_path,
     resolve_pdf_roots,
     pdf_index_cache_path,
 )
+
+LOCK_CONSOLIDAR_REDE = os.path.join(BASE_REDE_PEDIDOS, ".consolidar_rede.lock")
 from app.core.auth import assignable_profiles, is_admin, normalize_profile
 from app.core.audit_store import AuditStore
 from app.data.auditoria_repository import AuditoriaRepository
@@ -65,6 +68,18 @@ class AuditoriaService:
         self._cache_db_mtime = None
         self._cache_db_size = None
 
+    def is_demo_mode(self) -> bool:
+        return not bool(resolve_db_path())
+
+    def needs_reload(self, force=False) -> bool:
+        """Evita reler/copiar o .db quando o consolidado na rede não mudou."""
+        db_path = resolve_db_path()
+        if not db_path or self._cache_dados is None:
+            return True
+        if not force:
+            return not self._cache_still_valid(db_path)
+        return not self._cache_still_valid(db_path)
+
     def sincronizar_consolidado_pedidos(self):
         """Corre o consolidar_rede do sistema de pedidos (mesma pasta Z:\\0 OBRAS) e devolve (ok, mensagem_erro)."""
         argv = resolve_consolidar_argv()
@@ -72,6 +87,11 @@ class AuditoriaService:
             return False, (
                 "Consolidador nao disponivel: consolidar_rede.py nao encontrado ou falta python.exe "
                 "(em .exe empacotado use AUDITORIA_CONSOLIDAR_PYTHON ou .venv na pasta do projeto na rede)."
+            )
+        if os.path.isfile(LOCK_CONSOLIDAR_REDE):
+            return False, (
+                "Consolidacao em andamento no sistema de pedidos (.consolidar_rede.lock). "
+                "Aguarde alguns segundos e tente novamente."
             )
         exe0 = os.path.normcase(os.path.abspath(argv[0]))
         if getattr(sys, "frozen", False) and exe0 == os.path.normcase(os.path.abspath(sys.executable)):
@@ -112,7 +132,14 @@ class AuditoriaService:
 
         tmp_db = None
         read_path = db_path
-        if db_path and os.path.isfile(db_path) and force and AUDITORIA_DB_COPY_ON_FORCE_RELOAD:
+        skip_copy = db_path and self._cache_still_valid(db_path)
+        if (
+            db_path
+            and os.path.isfile(db_path)
+            and force
+            and AUDITORIA_DB_COPY_ON_FORCE_RELOAD
+            and not skip_copy
+        ):
             try:
                 fd, tmp_db = tempfile.mkstemp(prefix="auditoria_cotacao_", suffix=".db")
                 os.close(fd)
@@ -136,6 +163,10 @@ class AuditoriaService:
             if read_path:
                 repo = AuditoriaRepository(read_path)
                 dados = repo.listar_pedidos()
+                itens_por_pedido = repo.listar_itens_por_pedido()
+                for item in dados:
+                    pid = item.get("pedido_id")
+                    item["itens_detalhe"] = itens_por_pedido.get(pid, [])
                 origem = f"Banco real: {db_path}"
             else:
                 dados = self._dados_demo()
@@ -276,7 +307,7 @@ class AuditoriaService:
 
     def _status_auditoria(self, item):
         if item["sem_pdf"] and item["sem_comprador"]:
-            return "Critico"
+            return "Crítico"
         if item["sem_pdf"]:
             return "Sem PDF"
         if item["sem_comprador"]:
@@ -688,42 +719,160 @@ class AuditoriaService:
             "top_fornecedores": top_forn,
         }
 
-    def item_auditoria(self, dados, termo):
-        cache_key = ("item_auditoria", self._data_version, (termo or "").strip().upper(), len(dados))
-        if cache_key in self._summary_cache:
-            return self._summary_cache[cache_key]
-        t = termo.strip().upper()
-        rows = []
-        for p in dados:
-            valor = p.get("_valor_total_float", float(p.get("valor_total") or 0))
-            itens = p.get("itens_lista") or []
-            for item in itens:
-                if t and t not in item.upper():
+    def _linhas_item_do_pedido(self, pedido, termo_upper):
+        obra = (pedido.get("obra_nome") or "SEM OBRA").strip() or "SEM OBRA"
+        fornecedor = (pedido.get("fornecedor_nome") or "SEM FORNECEDOR").strip() or "SEM FORNECEDOR"
+        data = pedido.get("data_pedido") or ""
+        numero = str(pedido.get("numero") or "").strip()
+        detalhe = pedido.get("itens_detalhe") or []
+        linhas = []
+        if detalhe:
+            for lin in detalhe:
+                desc = (lin.get("descricao") or "").strip()
+                if not desc:
                     continue
-                rows.append(
+                if termo_upper and termo_upper not in desc.upper():
+                    continue
+                linhas.append(
                     {
-                        "item": item,
-                        "obra": p.get("obra_nome") or "SEM OBRA",
-                        "fornecedor": p.get("fornecedor_nome") or "SEM FORNECEDOR",
-                        "valor": valor,
-                        "data": p.get("data_pedido") or "",
+                        "item": desc,
+                        "obra": obra,
+                        "fornecedor": fornecedor,
+                        "quantidade": float(lin.get("quantidade") or 0),
+                        "unidade": (lin.get("unidade") or "").strip().upper(),
+                        "valor_unitario": float(lin.get("valor_unitario") or 0),
+                        "valor": float(lin.get("valor_total") or 0),
+                        "data": data,
+                        "numero_pedido": numero,
                     }
                 )
+            return linhas
+        for desc in pedido.get("itens_lista") or []:
+            if termo_upper and termo_upper not in desc.upper():
+                continue
+            linhas.append(
+                {
+                    "item": desc,
+                    "obra": obra,
+                    "fornecedor": fornecedor,
+                    "quantidade": 0.0,
+                    "unidade": "",
+                    "valor_unitario": 0.0,
+                    "valor": pedido.get("_valor_total_float", float(pedido.get("valor_total") or 0)),
+                    "data": data,
+                    "numero_pedido": numero,
+                }
+            )
+        return linhas
+
+    @staticmethod
+    def _totais_quantidade_por_obra(rows):
+        """Soma quantidades por obra e unidade (nao mistura unidades diferentes)."""
+        bucket = {}
+        for r in rows:
+            obra = r.get("obra") or "SEM OBRA"
+            un = (r.get("unidade") or "").strip().upper() or "—"
+            qtd = float(r.get("quantidade") or 0)
+            if qtd <= 0:
+                continue
+            bucket.setdefault(obra, {})
+            bucket[obra][un] = bucket[obra].get(un, 0.0) + qtd
+        totais = []
+        for obra in sorted(bucket.keys()):
+            for un, total in sorted(bucket[obra].items(), key=lambda x: (-x[1], x[0])):
+                totais.append({"obra": obra, "unidade": un, "total": total})
+        return totais
+
+    def _filtrar_pedidos_item_auditoria(self, dados, filtros):
+        """Mesmos critérios do módulo Pedidos, antes de expandir linhas de item."""
+        comprador = (filtros.get("comprador") or "TODOS").strip().upper()
+        obra = (filtros.get("obra") or "TODAS").strip().upper()
+        status = (filtros.get("status") or "TODOS").strip().upper()
+        fornecedor = (filtros.get("fornecedor") or "TODOS").strip().upper()
+        item_txt = (filtros.get("item") or "").strip().upper()
+        d_ini = filtros.get("data_ini")
+        d_fim = filtros.get("data_fim")
+        if d_ini and d_fim and d_ini > d_fim:
+            d_ini, d_fim = d_fim, d_ini
+        out = []
+        for d in dados:
+            if comprador != "TODOS" and comprador != (d.get("comprador") or "").strip().upper():
+                continue
+            if obra != "TODAS" and obra != (d.get("obra_nome") or "").strip().upper():
+                continue
+            st = (d.get("status_auditoria") or "").strip().upper()
+            if status != "TODOS" and status != st:
+                continue
+            if (
+                fornecedor
+                and fornecedor != "TODOS"
+                and fornecedor not in (d.get("fornecedor_nome") or "").upper()
+            ):
+                continue
+            if item_txt and item_txt not in (d.get("itens_texto") or "").upper():
+                continue
+            if d_ini and d_fim:
+                dt = self._data_referencia_pedido(d)
+                if dt == datetime.min:
+                    continue
+                pd = dt.date()
+                if pd < d_ini or pd > d_fim:
+                    continue
+            out.append(d)
+        return out
+
+    def item_auditoria(self, dados, filtros=None):
+        filtros = filtros or {}
+        t = (filtros.get("item") or "").strip().upper()
+        obra_alvo = (filtros.get("obra") or "TODAS").strip().upper()
+        cache_key = (
+            "item_auditoria",
+            self._data_version,
+            t,
+            obra_alvo,
+            (filtros.get("comprador") or "").strip().upper(),
+            (filtros.get("status") or "").strip().upper(),
+            (filtros.get("fornecedor") or "").strip().upper(),
+            str(filtros.get("data_ini")),
+            str(filtros.get("data_fim")),
+            len(dados),
+        )
+        if cache_key in self._summary_cache:
+            return self._summary_cache[cache_key]
+        pedidos = self._filtrar_pedidos_item_auditoria(dados, filtros)
+        rows = []
+        for p in pedidos:
+            rows.extend(self._linhas_item_do_pedido(p, t))
         if not rows:
-            out = {"rows": [], "stats": {}}
+            out = {"rows": [], "stats": {}, "totais_obra": []}
             self._summary_cache[cache_key] = out
             return out
-        valores = [r["valor"] for r in rows]
-        forn_barato = min(rows, key=lambda x: x["valor"]).get("fornecedor")
+        valores_unit = [r["valor_unitario"] for r in rows if r.get("valor_unitario")]
+        valores_linha = [r["valor"] for r in rows]
+        forn_por_unit = {}
+        for r in rows:
+            if r.get("valor_unitario", 0) <= 0:
+                continue
+            fn = r.get("fornecedor") or ""
+            if fn not in forn_por_unit or r["valor_unitario"] < forn_por_unit[fn]:
+                forn_por_unit[fn] = r["valor_unitario"]
+        forn_barato = min(forn_por_unit, key=forn_por_unit.get) if forn_por_unit else "-"
+        totais_obra = self._totais_quantidade_por_obra(rows)
+        total_obra_filtrada = []
+        if obra_alvo and obra_alvo != "TODAS":
+            total_obra_filtrada = [x for x in totais_obra if (x.get("obra") or "").upper() == obra_alvo]
         out = {
             "rows": rows,
+            "totais_obra": totais_obra,
             "stats": {
                 "qtd": len(rows),
                 "obras": len({r["obra"] for r in rows}),
-                "preco_medio": sum(valores) / len(valores),
-                "preco_min": min(valores),
-                "preco_max": max(valores),
+                "preco_medio_unit": (sum(valores_unit) / len(valores_unit)) if valores_unit else 0,
+                "preco_min_unit": min(valores_unit) if valores_unit else 0,
+                "preco_max_unit": max(valores_unit) if valores_unit else 0,
+                "valor_total_linhas": sum(valores_linha),
                 "fornecedor_mais_barato": forn_barato,
+                "total_obra_filtrada": total_obra_filtrada,
             },
         }
         self._summary_cache[cache_key] = out

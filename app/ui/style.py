@@ -45,9 +45,13 @@ QFrame#sidebar QLabel#sidebarTagline {
 }
 QLabel#sidebarLogo {
     padding: 2px 6px 14px 6px;
+    background: transparent;
+    border: none;
 }
 QLabel#topbarLogo {
     padding: 2px 12px 2px 2px;
+    background: transparent;
+    border: none;
 }
 
 QFrame#sidebar QLabel#sectionTitle {
@@ -128,6 +132,14 @@ QLabel#moduleHeroDesc {
     color: #334155;
 }
 
+QLabel#demoBanner {
+    background: #fef3c7;
+    color: #92400e;
+    border: 1px solid #fcd34d;
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-weight: 600;
+}
 QFrame#panelCard {
     background: #ffffff;
     border: 1px solid #e2e8f0;
@@ -350,7 +362,7 @@ QPushButton#tablePdfButton {
 }
 
 /* ---------- campos ---------- */
-QLineEdit, QComboBox, QDateEdit {
+QLineEdit, QDateEdit {
     background: #ffffff;
     border: 1px solid #cbd5e1;
     border-radius: 10px;
@@ -359,17 +371,42 @@ QLineEdit, QComboBox, QDateEdit {
     selection-background-color: #bfdbfe;
     selection-color: #0f172a;
 }
-QLineEdit:focus, QComboBox:focus, QDateEdit:focus {
+QComboBox {
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    padding: 6px 34px 6px 10px;
+    min-height: 34px;
+    selection-background-color: #bfdbfe;
+    selection-color: #0f172a;
+}
+QComboBox QLineEdit {
+    border: none;
+    background: transparent;
+    padding: 2px 4px;
+    margin: 0;
+    min-height: 22px;
+}
+QLineEdit:focus, QDateEdit:focus {
     border: 2px solid #3b82f6;
     padding: 7px 11px;
 }
-QDateEdit::drop-down {
+QComboBox:focus {
+    border: 2px solid #3b82f6;
+    padding: 5px 33px 5px 9px;
+}
+QComboBox QLineEdit:focus {
     border: none;
-    width: 26px;
+    padding: 2px 4px;
+}
+QDateEdit::drop-down {
+    width: 0;
+    border: none;
 }
 QDateEdit::down-arrow {
-    width: 10px;
-    height: 10px;
+    image: none;
+    width: 0;
+    height: 0;
 }
 /* Calendário popup do QDateEdit (evita barra/preenchimento preto no Windows). */
 QCalendarWidget {
@@ -412,9 +449,15 @@ QCalendarWidget QAbstractItemView:enabled {
     alternate-background-color: #f8fafc;
     border: 1px solid #dbe5f1;
 }
+/* Seta do combo: botão brasulComboDropBtn (evita seta duplicada / distorcida). */
 QComboBox::drop-down {
+    width: 0;
     border: none;
-    width: 28px;
+}
+QComboBox::down-arrow {
+    image: none;
+    width: 0;
+    height: 0;
 }
 /* Popup do combo — lista branca, moldura azul clara; itens com borda na seleção */
 QComboBox QAbstractItemView {
@@ -426,11 +469,11 @@ QComboBox QAbstractItemView {
     selection-color: #0f172a;
     padding: 4px;
     outline: none;
-    min-width: 120px;
+    min-width: 200px;
 }
 QComboBox QAbstractItemView::item {
     min-height: 28px;
-    padding: 8px 12px;
+    padding: 8px 14px;
     border-radius: 6px;
     border: 1px solid transparent;
     margin: 2px 4px;

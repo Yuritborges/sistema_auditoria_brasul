@@ -13,7 +13,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+import logging
+
 from app.ui.consulta_readonly import configurar_tabela_consulta
+from app.ui.user_messages import erro_salvar
 
 
 class ContratosWidget(QWidget):
@@ -181,8 +184,9 @@ class ContratosWidget(QWidget):
                 self.usuario_getter(),
             )
             self._refresh()
-        except Exception as e:
-            QMessageBox.warning(self, "Contrato", f"Falha ao salvar contrato.\n\n{e}")
+        except Exception:
+            logging.getLogger(__name__).exception("Falha ao salvar contrato")
+            QMessageBox.warning(self, "Contrato", erro_salvar("o contrato"))
 
     def _remover(self):
         cid = self._selected_contract_id()
@@ -210,8 +214,9 @@ class ContratosWidget(QWidget):
                 self.usuario_getter(),
             )
             self._refresh()
-        except Exception as e:
-            QMessageBox.warning(self, "Aditivo", f"Falha ao salvar aditivo.\n\n{e}")
+        except Exception:
+            logging.getLogger(__name__).exception("Falha ao salvar aditivo")
+            QMessageBox.warning(self, "Aditivo", erro_salvar("o aditivo"))
 
     def _refresh(self):
         contratos = self.service.listar_contratos()

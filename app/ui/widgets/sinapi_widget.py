@@ -1,3 +1,4 @@
+import logging
 import os
 
 from PySide6.QtCore import Qt
@@ -16,6 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.ui.consulta_readonly import configurar_tabela_consulta
+from app.ui.user_messages import erro_generico
 
 
 class SinapiWidget(QWidget):
@@ -94,8 +96,9 @@ class SinapiWidget(QWidget):
         try:
             total = self.service.importar_sinapi_csv(path, comp, uf)
             self.lbl_msg.setText(f"SINAPI atualizado: {total} itens importados para {comp}/{uf}.")
-        except Exception as e:
-            QMessageBox.critical(self, "SINAPI", f"Falha ao importar CSV.\n\n{e}")
+        except Exception:
+            logging.getLogger(__name__).exception("Falha ao importar SINAPI")
+            QMessageBox.critical(self, "SINAPI", erro_generico("importar o arquivo"))
 
     def _comparar(self):
         comp = self.ed_comp.text().strip()

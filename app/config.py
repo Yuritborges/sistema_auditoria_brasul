@@ -37,20 +37,37 @@ LOGOS_DIR = os.path.join(ASSETS_DIR, "logos")
 
 
 def resolve_app_icon_path():
-    """Arquivo de ícone para QApplication / janela (caminho absoluto)."""
+    """Arquivo .ico para janela e barra de tarefas (somente ICO — PNG não serve bem no Windows)."""
+    ico_names = ("iconebrasul2.ico",)
+
+    def _first_existing(*paths):
+        for p in paths:
+            if p and os.path.isfile(p):
+                return os.path.abspath(p)
+        return ""
+
     if getattr(sys, "frozen", False):
+        asset_roots = []
         meipass = getattr(sys, "_MEIPASS", None) or ""
         if meipass:
-            p = os.path.join(meipass, "assets", "iconebrasul2.ico")
-            if os.path.isfile(p):
-                return os.path.abspath(p)
-    for name in ("iconebrasul2.ico", "iconebrasul.png"):
-        p = os.path.join(ASSETS_DIR, name)
-        if os.path.isfile(p):
-            return os.path.abspath(p)
-    p = os.path.join(LOGOS_DIR, "logo_brasul.png")
-    if os.path.isfile(p):
-        return os.path.abspath(p)
+            asset_roots.append(os.path.join(meipass, "assets"))
+        asset_roots.extend(
+            [
+                os.path.join(BASE_DIR, "_internal", "assets"),
+                os.path.join(BASE_DIR, "assets"),
+            ]
+        )
+        for root in asset_roots:
+            for name in ico_names:
+                found = _first_existing(os.path.join(root, name))
+                if found:
+                    return found
+        return ""
+
+    for name in ico_names:
+        found = _first_existing(os.path.join(ASSETS_DIR, name), os.path.join(LOGOS_DIR, name))
+        if found:
+            return found
     return ""
 
 # Mesma árvore do sistema de pedidos (Z:\0 OBRAS\brasul_pedidos\...).
@@ -66,23 +83,24 @@ DB_CANDIDATES = [
     os.path.join(BASE_DIR, "database", "cotacao_rede.db"),
 ]
 
-# Identidade visual: PNG/SVG rasterizado não é suportado direto no QPixmap para SVG sem QtSvg — prefira PNG.
+# Logo na interface (login, menu, topo): PNG horizontal BRASUL CONSTRUTORA — não usar o ícone quadrado.
 LOGO_CANDIDATES = [
     os.environ.get("AUDITORIA_LOGO_PATH", "").strip(),
     os.path.join(LOGOS_DIR, "logo_brasul.png"),
-    os.path.join(LOGOS_DIR, "brasul.png"),
     os.path.join(ASSETS_DIR, "logos", "logo_brasul.png"),
-    os.path.join(ASSETS_DIR, "logo_brasul.png"),
-    os.path.join(ASSETS_DIR, "brasul.png"),
-    os.path.join(ASSETS_DIR, "iconebrasul.png"),
-    os.path.join(ASSETS_DIR, "iconebrasul2.ico"),
 ]
 
 
 def resolve_logo_path():
+    """Somente logo horizontal (logo_brasul.png). Ícone quadrado é só .ico na barra do Windows."""
+    explicit = (os.environ.get("AUDITORIA_LOGO_PATH") or "").strip()
+    if explicit and os.path.isfile(explicit):
+        return os.path.abspath(explicit)
     for candidate in LOGO_CANDIDATES:
-        if candidate and os.path.isfile(candidate):
-            return candidate
+        if not candidate or not os.path.isfile(candidate):
+            continue
+        if "logo_brasul" in os.path.basename(candidate).lower():
+            return os.path.abspath(candidate)
     return ""
 
 
@@ -110,8 +128,12 @@ AUDITORIA_DB_COPY_ON_FORCE_RELOAD = os.environ.get(
 ).strip().lower() in ("1", "true", "sim", "yes")
 
 # Polling silencioso da UI (ms). 0 desativa. Ver AuditShellWidget._auto_recarregar.
-# Ex.: set AUDITORIA_AUTO_RELOAD_MS=15000 para 15 s.
-AUDITORIA_AUTO_RELOAD_MS_DEFAULT = 30_000
+# Padrão 20 s: alinhado ao incremental do pedidos (cotacao_rede.db); só relê se mtime/size mudou.
+AUDITORIA_AUTO_RELOAD_MS_DEFAULT = 20_000
+
+# Consolida Iury+Thamyres → cotacao_rede.db quando defasado (0 = só pelo botão manual).
+# Padrão 2 min — evita disputar lock com o timer do sistema de pedidos (300 s).
+AUDITORIA_AUTO_CONSOLIDAR_MS_DEFAULT = 120_000
 
 # Cada tick do timer chama carregar(force=True): copia o consolidado para ficheiro local
 # antes de abrir (respeita AUDITORIA_DB_COPY_ON_FORCE_RELOAD). Em pastas de rede (SMB)

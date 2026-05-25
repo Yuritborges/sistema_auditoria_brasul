@@ -79,16 +79,29 @@ O painel de auditoria le o **mesmo banco consolidado** que o programa de pedidos
 | 2 | `Z:\0 OBRAS\brasul_pedidos\cotacao_rede.db` |
 | 3 | `database/cotacao_rede.db` dentro deste projeto (cópia local de fallback) |
 
-**Atualizar o consolidado** (Iury + Thamyres → `cotacao_rede.db`):
+**Sincronização quase em tempo real (padrão atual):**
+
+| O quê | Como |
+|-------|------|
+| **Cada pedido salvo** (pedidos aberto) | Atualização **incremental** de `cotacao_rede.db` em poucos segundos (`sync_pedido_atual_para_cotacao_rede`) |
+| Sistema de **pedidos** com o app aberto | Timer **300 s** (5 min): consolidação completa se Iury/Thamyres defasados; backup rolling **900 s** (`REDE_SYNC_*`, `BACKUP_REDE_*`) |
+| Sistema de **auditoria** com o app aberto | **20 s**: relê o consolidado **só se** `mtime`/tamanho mudou; **120 s**: consolida via script se defasado |
+| Botão **«Atualizar pedidos (rede)»** | Consolidação manual em segundo plano + recarga |
+
+Variáveis opcionais: `BRASUL_REDE_SYNC_SEG` (ex. `60` para consolidar pedidos a cada minuto), `BRASUL_BACKUP_REDE_SEG`, `AUDITORIA_AUTO_RELOAD_MS` (ex. `15000`), `AUDITORIA_AUTO_CONSOLIDAR_MS` (use `0` para desligar).
+
+**Perfil ENGENHEIRA:** use o perfil `ENGENHARIA` (Obras, Pedidos, Medições, Contratos) para medições físico-financeiras; cadastre contratos antes de medir.
+
+**Consolidação manual** (Iury + Thamyres → `cotacao_rede.db`):
 
 ```powershell
 cd "Z:\0 OBRAS\sistema_de_pedidos_brasulv2"
 .\.venv\Scripts\python.exe tools\consolidar_rede.py
 ```
 
-No **Sistema de Auditoria**, o botão da barra lateral **«Atualizar pedidos (rede)»** executa o mesmo script (se existir em `Z:\0 OBRAS\sistema_de_pedidos_brasulv2\tools\`) com **Python do `.venv` na rede** (não o `.exe` da auditoria — usar o `.exe` como intérprete relançava a interface). Caminhos alternativos: `AUDITORIA_CONSOLIDAR_SCRIPT` e `AUDITORIA_CONSOLIDAR_PYTHON`.
+O botão **«Atualizar pedidos (rede)»** executa o mesmo script com o **Python do `.venv` na rede** (não o `.exe` da auditoria). Caminhos alternativos: `AUDITORIA_CONSOLIDAR_SCRIPT` e `AUDITORIA_CONSOLIDAR_PYTHON`.
 
-Feche o sistema de pedidos nas máquinas se o script acusar banco em uso. Depois de consolidar, reabra a auditoria (ou use *Atualizar* / recarregar se existir) para ver pedidos novos.
+Se a consolidação falhar por banco em uso, feche o sistema de pedidos nas duas máquinas e tente de novo. Com os timers ativos, em geral não é preciso clicar no botão.
 
 **Cadastro de obras:** na consulta por obra, os nomes vêm dos pedidos consolidados e, quando existir, de `brasul_pedidos\cadastros_compartilhados\obras.json`, alinhado ao sistema de pedidos.
 

@@ -31,6 +31,16 @@ PERMISSIONS_BY_PROFILE = {
         "conciliacao",
         "fiscalizacao",
     },
+    # Engenharia: medições e consulta de compras por obra (dados vêm do consolidado na rede).
+    "ENGENHARIA": {
+        "dashboard",
+        "obras",
+        "pedidos",
+        "fornecedores",
+        "relatorios",
+        "contratos",
+        "medicoes",
+    },
 }
 
 
@@ -46,7 +56,7 @@ def is_admin(profile):
 
 
 def assignable_profiles(operator_profile, allow_admin=False):
-    base = ["COMPRADOR", "FINANCEIRO"]
+    base = ["COMPRADOR", "FINANCEIRO", "ENGENHARIA"]
     if allow_admin or is_admin(operator_profile):
         return ["ADMIN"] + base
     return base

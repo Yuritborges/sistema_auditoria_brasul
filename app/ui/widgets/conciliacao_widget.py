@@ -12,7 +12,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+import logging
+
 from app.ui.consulta_readonly import configurar_tabela_consulta
+from app.ui.user_messages import erro_salvar
 
 
 class ConciliacaoWidget(QWidget):
@@ -116,8 +119,9 @@ class ConciliacaoWidget(QWidget):
                 self.usuario_getter(),
             )
             self._refresh()
-        except Exception as e:
-            QMessageBox.warning(self, "Conciliação", f"Falha ao salvar NF.\n\n{e}")
+        except Exception:
+            logging.getLogger(__name__).exception("Falha ao salvar NF")
+            QMessageBox.warning(self, "Conciliação", erro_salvar("a nota fiscal"))
 
     def _refresh(self):
         rows = self.service.conciliar_nf_pedidos_medicoes(self._dados)

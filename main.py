@@ -8,11 +8,31 @@ import os
 import ctypes
 import logging
 from logging.handlers import RotatingFileHandler
-from PySide6.QtGui import QIcon
+
+# Barra de tarefas do Windows: ID fixo antes de importar Qt (igual ao sistema de pedidos).
+if sys.platform.startswith("win"):
+    try:
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+            "brasul.sistema.auditoria"
+        )
+    except Exception:
+        pass
+
 from PySide6.QtWidgets import QApplication
 from app.config import resolve_app_icon_path
+from app.ui.app_icon import criar_icone_aplicativo
 from app.ui.main_window import MainWindowPatrao
 from app.ui.style import APP_STYLESHEET
+from app.ui.win_icon import aplicar_icone_janela_win32
+
+
+def _aplicar_icone(app, janela=None):
+    ic = criar_icone_aplicativo()
+    if not ic.isNull():
+        app.setWindowIcon(ic)
+        if janela is not None:
+            janela.setWindowIcon(ic)
+    return ic
 
 
 def _configure_logging():
@@ -31,14 +51,7 @@ def _configure_logging():
 
 def main():
     _configure_logging()
-    # Garante icone proprio na barra de tarefas do Windows.
-    if sys.platform.startswith("win"):
-        try:
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
-                "brasul.sistema.auditoria"
-            )
-        except Exception:
-            logging.getLogger(__name__).exception("Falha ao configurar AppUserModelID do Windows")
+    log = logging.getLogger(__name__)
 
     app = QApplication(sys.argv)
     app.setApplicationName("SistemaAuditoriaBrasul")
@@ -48,21 +61,17 @@ def main():
     app.setStyle("Fusion")
     # Aplica identidade visual global (inclui popups/combobox/messagebox).
     app.setStyleSheet(APP_STYLESHEET)
-    log = logging.getLogger(__name__)
-    icon_path = resolve_app_icon_path()
-    ic = QIcon()
-    if icon_path:
-        ic = QIcon(icon_path)
-        if ic.isNull():
-            log.warning("Icone nao carregado (QIcon null): %s", icon_path)
-        else:
-            app.setWindowIcon(ic)
-    else:
-        log.warning("Nenhum icone encontrado (ASSETS / PyInstaller _MEIPASS).")
     win = MainWindowPatrao()
-    if not ic.isNull():
-        win.setWindowIcon(ic)
+    ic = _aplicar_icone(app, win)
+    if ic.isNull():
+        log.warning(
+            "Icone .ico nao carregado (ver assets/iconebrasul2.ico e _internal/assets no .exe)."
+        )
     win.show()
+    ic_path = resolve_app_icon_path()
+    _aplicar_icone(app, win)
+    if ic_path:
+        aplicar_icone_janela_win32(win, ic_path)
     sys.exit(app.exec())
 
 

@@ -7,7 +7,6 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -16,8 +15,16 @@ from PySide6.QtWidgets import (
 )
 
 from app.ui.consulta_readonly import configurar_tabela_consulta
-from app.ui.widgets.brasul_combo import BrasulComboBox
+from app.ui.widgets.brasul_combo import (
+    BrasulComboBox,
+    garantir_combo_digitavel,
+    itens_distintos_dos_pedidos,
+    preencher_combo_filtro,
+)
+from app.services.cadastros_rede import nomes_obras_cadastro
 from app.ui.widgets.brasul_date_edit import BrasulDateEdit
+
+PAGE_CHUNK = 300
 
 
 class ObrasWidget(QWidget):
@@ -25,6 +32,9 @@ class ObrasWidget(QWidget):
         super().__init__()
         self.service = service
         self._dados = []
+        self._filtrados = []
+        self._visible_rows = PAGE_CHUNK
+        self._item_filtro_ativo = ""
         self._build()
 
     def _build(self):
@@ -50,12 +60,19 @@ class ObrasWidget(QWidget):
         filtros.setHorizontalSpacing(12)
         filtros.setVerticalSpacing(10)
         self.cb_obra = BrasulComboBox()
-        self.ed_fornecedor = QLineEdit()
-        self.ed_fornecedor.setPlaceholderText("Fornecedor…")
-        self.ed_item = QLineEdit()
-        self.ed_item.setPlaceholderText("Material / item…")
-        self.ed_comprador = QLineEdit()
-        self.ed_comprador.setPlaceholderText("Comprador…")
+        self.cb_fornecedor = BrasulComboBox()
+        self.cb_item = BrasulComboBox()
+        self.cb_comprador = BrasulComboBox()
+        for cb, ph in (
+            (self.cb_obra, "TODAS ou digite para buscar obra…"),
+            (self.cb_fornecedor, "Fornecedor ou digite para buscar…"),
+            (self.cb_item, "Material / item ou digite para buscar…"),
+            (self.cb_comprador, "Comprador ou digite para buscar…"),
+        ):
+            garantir_combo_digitavel(cb)
+            le = cb.lineEdit()
+            if le is not None:
+                le.setPlaceholderText(ph)
 
         today = QDate.currentDate()
         jan1 = QDate(today.year(), 1, 1)
@@ -72,7 +89,19 @@ class ObrasWidget(QWidget):
         self.dt_ini.dateChanged.connect(self._aplicar)
         self.dt_fim.dateChanged.connect(self._aplicar)
 
-        btn = QPushButton("Aplicar")
+        for cb in (self.cb_obra, self.cb_fornecedor, self.cb_item, self.cb_comprador):
+            cb.activated.connect(self._aplicar)
+            le = cb.lineEdit()
+            if le is not None:
+                le.returnPressed.connect(self._aplicar)
+
+        btn_limpar = QPushButton("Limpar")
+        btn_limpar.setObjectName("secondaryButton")
+        btn_limpar.setToolTip("Limpa fornecedor, item e comprador (mantém obra e período).")
+        btn_limpar.clicked.connect(self._limpar_filtros_secundarios)
+
+        btn = QPushButton("Aplicar filtros")
+        btn.setToolTip("Atualiza a tabela com os filtros selecionados.")
         btn.clicked.connect(self._aplicar)
 
         def _fl(text):
@@ -83,11 +112,11 @@ class ObrasWidget(QWidget):
         filtros.addWidget(_fl("Obra"), 0, 0)
         filtros.addWidget(self.cb_obra, 0, 1)
         filtros.addWidget(_fl("Fornecedor"), 0, 2)
-        filtros.addWidget(self.ed_fornecedor, 0, 3)
+        filtros.addWidget(self.cb_fornecedor, 0, 3)
         filtros.addWidget(_fl("Item"), 1, 0)
-        filtros.addWidget(self.ed_item, 1, 1)
+        filtros.addWidget(self.cb_item, 1, 1)
         filtros.addWidget(_fl("Comprador"), 1, 2)
-        filtros.addWidget(self.ed_comprador, 1, 3)
+        filtros.addWidget(self.cb_comprador, 1, 3)
         filtros.addWidget(_fl("Período"), 2, 0)
         period_row = QHBoxLayout()
         period_row.setSpacing(10)
@@ -99,7 +128,13 @@ class ObrasWidget(QWidget):
         period_wrap = QWidget()
         period_wrap.setLayout(period_row)
         filtros.addWidget(period_wrap, 2, 1, 1, 2)
-        filtros.addWidget(btn, 2, 3)
+        acoes = QHBoxLayout()
+        acoes.setSpacing(8)
+        acoes.addWidget(btn_limpar)
+        acoes.addWidget(btn)
+        acoes_w = QWidget()
+        acoes_w.setLayout(acoes)
+        filtros.addWidget(acoes_w, 2, 3)
         c_layout.addLayout(filtros)
         root.addWidget(card)
 
@@ -138,6 +173,11 @@ class ObrasWidget(QWidget):
         self.tbl.setColumnWidth(7, 88)
         configurar_tabela_consulta(self.tbl)
         tbl_l.addWidget(self.tbl)
+        self.btn_mais = QPushButton("Carregar mais")
+        self.btn_mais.setObjectName("secondaryButton")
+        self.btn_mais.clicked.connect(self._carregar_mais)
+        self.btn_mais.hide()
+        tbl_l.addWidget(self.btn_mais)
         root.addWidget(tbl_card, 1)
 
     def focus_obra(self, obra_nome: str):
@@ -155,6 +195,15 @@ class ObrasWidget(QWidget):
                 self.cb_obra.setCurrentIndex(i)
                 self._aplicar()
                 return
+
+    def _limpar_filtros_secundarios(self):
+        self._item_filtro_ativo = ""
+        for cb in (self.cb_fornecedor, self.cb_item, self.cb_comprador):
+            le = cb.lineEdit()
+            if le is not None:
+                le.clear()
+            cb.setCurrentIndex(-1)
+        self._aplicar()
 
     def _limitar_periodo(self):
         today = QDate.currentDate()
@@ -186,32 +235,49 @@ class ObrasWidget(QWidget):
 
     def set_data(self, dados):
         obra_atual = (self.cb_obra.currentText() or "").strip()
-        fornecedor_atual = self.ed_fornecedor.text()
-        item_atual = self.ed_item.text()
-        comprador_atual = self.ed_comprador.text()
+        fornecedor_atual = self.cb_fornecedor.currentText()
+        item_atual = self._item_filtro_ativo
+        comprador_atual = self.cb_comprador.currentText()
         dt_ini_atual = self.dt_ini.date()
         dt_fim_atual = self.dt_fim.date()
 
         self._dados = dados
-        obras = sorted({(d.get("obra_nome") or "").strip() for d in dados if (d.get("obra_nome") or "").strip()})
+        obras_set = {(d.get("obra_nome") or "").strip() for d in dados if (d.get("obra_nome") or "").strip()}
+        obras_set.update(nomes_obras_cadastro())
+        obras = sorted(obras_set, key=lambda s: s.upper())
 
-        self.cb_obra.clear()
-        self.cb_obra.addItem("TODAS")
-        self.cb_obra.addItems(obras)
-
-        if obra_atual:
-            idx = self.cb_obra.findText(obra_atual, Qt.MatchFlag.MatchFixedString | Qt.MatchFlag.MatchCaseSensitive)
-            if idx < 0:
-                idx = self.cb_obra.findText(obra_atual, Qt.MatchFlag.MatchFixedString)
-            if idx >= 0:
-                self.cb_obra.setCurrentIndex(idx)
-            else:
-                # Mantém o texto digitado sem resetar para "TODAS".
-                self.cb_obra.setEditText(obra_atual)
-
-        self.ed_fornecedor.setText(fornecedor_atual)
-        self.ed_item.setText(item_atual)
-        self.ed_comprador.setText(comprador_atual)
+        preencher_combo_filtro(
+            self.cb_obra,
+            ["TODAS", *obras],
+            obra_atual or "TODAS",
+            "TODAS ou digite para buscar obra…",
+        )
+        fornecedores = sorted(
+            {(d.get("fornecedor_nome") or "").strip() for d in dados if (d.get("fornecedor_nome") or "").strip()}
+        )
+        compradores = sorted(
+            {(d.get("comprador") or "").strip() for d in dados if (d.get("comprador") or "").strip()}
+        )
+        itens = itens_distintos_dos_pedidos(dados)
+        preencher_combo_filtro(
+            self.cb_fornecedor,
+            fornecedores,
+            fornecedor_atual,
+            "Fornecedor ou digite para buscar…",
+        )
+        preencher_combo_filtro(
+            self.cb_item,
+            itens,
+            item_atual,
+            "Material / item ou digite para buscar…",
+            iniciar_vazio=not item_atual,
+        )
+        preencher_combo_filtro(
+            self.cb_comprador,
+            compradores,
+            comprador_atual,
+            "Comprador ou digite para buscar…",
+        )
         self.dt_ini.setDate(dt_ini_atual)
         self.dt_fim.setDate(dt_fim_atual)
         self._limitar_periodo()
@@ -219,9 +285,11 @@ class ObrasWidget(QWidget):
 
     def _aplicar(self):
         obra = self.cb_obra.currentText().strip().upper()
-        fornecedor = self.ed_fornecedor.text().strip().upper()
-        item = self.ed_item.text().strip().upper()
-        comprador = self.ed_comprador.text().strip().upper()
+        fornecedor = self.cb_fornecedor.currentText().strip().upper()
+        item = self.cb_item.currentText().strip()
+        self._item_filtro_ativo = item
+        item = item.upper()
+        comprador = self.cb_comprador.currentText().strip().upper()
         d_ini = self._qdate_to_date(self.dt_ini.date())
         d_fim = self._qdate_to_date(self.dt_fim.date())
         if d_ini > d_fim:
@@ -243,14 +311,35 @@ class ObrasWidget(QWidget):
             if pd < d_ini or pd > d_fim:
                 continue
             filtrados.append(d)
-        obra_ref = obra if obra != "TODAS" else (filtrados[0].get("obra_nome") if filtrados else "")
-        det = self.service.obra_details(filtrados, obra_ref)
-        self.lbl_total.setText(f"Valor total: {self._fmt(det.get('valor_total', 0))}")
+        self._filtrados = filtrados
+        self._visible_rows = PAGE_CHUNK
+        if obra != "TODAS":
+            det = self.service.obra_details(filtrados, obra)
+            titulo_obra = obra
+        else:
+            total = sum(
+                p.get("_valor_total_float", float(p.get("valor_total") or 0)) for p in filtrados
+            )
+            det = {"valor_total": total, "qtd_pedidos": len(filtrados)}
+            titulo_obra = "todas as obras (filtro)"
+        self.lbl_total.setText(f"Valor total ({titulo_obra}): {self._fmt(det.get('valor_total', 0))}")
         self.lbl_qtd.setText(f"Pedidos: {len(filtrados)}")
+        self._render_tabela()
+
+    def _carregar_mais(self):
+        self._visible_rows += PAGE_CHUNK
+        self._render_tabela()
+
+    def _render_tabela(self):
+        visiveis = self._filtrados[: self._visible_rows]
+        restante = len(self._filtrados) - len(visiveis)
+        self.btn_mais.setVisible(restante > 0)
+        if restante > 0:
+            self.btn_mais.setText(f"Carregar mais ({restante} restantes)")
         self.tbl.setUpdatesEnabled(False)
         try:
             self.tbl.setRowCount(0)
-            for i, p in enumerate(filtrados):
+            for i, p in enumerate(visiveis):
                 self.tbl.insertRow(i)
                 self.tbl.setRowHeight(i, 32)
                 vals = [

@@ -1,7 +1,7 @@
 import logging
 import os
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QThread, QTimer
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
@@ -18,12 +18,15 @@ from PySide6.QtWidgets import (
 )
 
 from app.config import (
+    AUDITORIA_AUTO_CONSOLIDAR_MS_DEFAULT,
     AUDITORIA_AUTO_RELOAD_FORCE,
     AUDITORIA_AUTO_RELOAD_MS_DEFAULT,
     resolve_consolidar_argv,
 )
+from app.services.consolidacao_rede_watch import ConsolidacaoRedeWatch
 from app.core.auth import PERMISSIONS_BY_PROFILE, can_access, normalize_profile
 from app.ui.branding import logo_label_compact, logo_label_sidebar
+from app.ui.user_messages import erro_carregar, erro_generico
 from app.ui.style import APP_STYLESHEET
 from app.ui.widgets.auditoria_widget import AuditoriaWidget
 from app.ui.widgets.conciliacao_widget import ConciliacaoWidget
@@ -38,6 +41,8 @@ from app.ui.widgets.pedidos_widget import PedidosWidget
 from app.ui.widgets.relatorios_widget import RelatoriosWidget
 from app.ui.widgets.user_session_dialog import UserSessionDialog
 from app.ui.widgets.usuarios_widget import UsuariosWidget
+from app.ui.workers.consolidar_worker import ConsolidarRedeWorker
+from app.ui.workers.data_reload_worker import DataReloadWorker
 
 
 class AuditShellWidget(QWidget):
@@ -63,6 +68,12 @@ class AuditShellWidget(QWidget):
         self._dados = []
         self._widget_data_version = {}
         self._data_version = 0
+        self._reload_busy = False
+        self._sync_busy = False
+        self._reload_thread = None
+        self._reload_worker = None
+        self._sync_thread = None
+        self._sync_worker = None
 
         # Sessão sempre exige autenticação por diálogo (sem bypass automático por ambiente).
         raw_prof = (os.environ.get("AUDITORIA_PERFIL") or "COMPRADOR").strip().upper()
@@ -75,6 +86,10 @@ class AuditShellWidget(QWidget):
             QTimer.singleShot(0, self._quit_app)
             return
         self._build()
+        self._consolidacao_watch = ConsolidacaoRedeWatch(
+            self.service,
+            on_success=lambda: QTimer.singleShot(0, self._on_consolidacao_automatica_ok),
+        )
         self._auto_reload_timer = QTimer(self)
         self._auto_reload_timer.timeout.connect(self._auto_recarregar)
         try:
@@ -86,46 +101,76 @@ class AuditShellWidget(QWidget):
         if reload_ms > 0:
             self._auto_reload_timer.setInterval(reload_ms)
             self._auto_reload_timer.start()
-        QTimer.singleShot(0, lambda: self.recarregar(force=False))
+        self._auto_consolidar_timer = QTimer(self)
+        self._auto_consolidar_timer.timeout.connect(self._auto_consolidar_rede)
+        try:
+            consolidar_ms = int(
+                (
+                    os.environ.get("AUDITORIA_AUTO_CONSOLIDAR_MS")
+                    or str(AUDITORIA_AUTO_CONSOLIDAR_MS_DEFAULT)
+                ).strip()
+            )
+        except ValueError:
+            consolidar_ms = AUDITORIA_AUTO_CONSOLIDAR_MS_DEFAULT
+        if consolidar_ms > 0:
+            self._auto_consolidar_timer.setInterval(consolidar_ms)
+            self._auto_consolidar_timer.start()
+            QTimer.singleShot(2000, self._auto_consolidar_rede)
+        # Primeira carga sempre dispara (dados vazios até o worker terminar).
+        QTimer.singleShot(0, lambda: self.recarregar(force=False, always=True))
 
     def _sincronizar_pedidos_rede(self):
-        """Tenta consolidar Iury+Thamyres → cotacao_rede.db; em qualquer caso atualiza os dados nesta janela."""
+        """Consolida em segundo plano; depois recarrega o consolidado sem travar a janela."""
+        if self._sync_busy:
+            return
         argv = resolve_consolidar_argv()
-        consolidou_ok = False
-        err_consolid = ""
-        QApplication.setOverrideCursor(Qt.WaitCursor)
-        try:
-            if argv:
-                consolidou_ok, err_consolid = self.service.sincronizar_consolidado_pedidos()
-        finally:
-            QApplication.restoreOverrideCursor()
-
-        # Sempre: mesma instância do programa, mesma sessão — só relê o .db na rede.
-        self.service.invalidate_consolidated_cache()
-        self.recarregar(force=True)
-
-        if argv and consolidou_ok:
-            QMessageBox.information(
-                self,
-                "Pedidos (rede)",
-                "Consolidação concluída e a lista neste painel foi atualizada.",
-            )
-        elif argv and not consolidou_ok:
-            QMessageBox.warning(
-                self,
-                "Consolidação",
-                (err_consolid or "Falha ao executar o consolidador.")
-                + "\n\nOs dados foram recarregados a partir do ficheiro atual na rede (esta janela).",
-            )
-        else:
+        if not argv:
+            self.service.invalidate_consolidated_cache()
+            self.recarregar(force=True, always=True)
             QMessageBox.information(
                 self,
                 "Dados atualizados",
-                "Não foi possível correr o consolidador automático neste PC (falta "
-                "tools\\consolidar_rede.py na rede ou um python.exe — ver AUDITORIA_CONSOLIDAR_PYTHON "
-                "e .venv em sistema_de_pedidos_brasulv2).\n\n"
-                "Os pedidos visíveis foram atualizados a partir do cotacao_rede.db já existente.",
+                "A sincronização completa com o sistema de pedidos não está disponível neste computador.\n\n"
+                "A lista foi atualizada com os pedidos já existentes na rede.",
             )
+            return
+        self._sync_busy = True
+        self.btn_sync_pedidos.setEnabled(False)
+        self.btn_refresh.setEnabled(False)
+
+        thread = QThread(self)
+        worker = ConsolidarRedeWorker(self.service)
+        self._sync_thread = thread
+        self._sync_worker = worker
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(self._on_sync_rede_finished)
+        worker.finished.connect(thread.quit)
+        thread.finished.connect(self._clear_sync_thread)
+        thread.start()
+
+    def _on_sync_rede_finished(self, consolidou_ok: bool, err_consolid: str):
+        self._sync_busy = False
+        self.btn_sync_pedidos.setEnabled(True)
+        self.service.invalidate_consolidated_cache()
+        self.recarregar(force=True, always=True)
+
+        def _msg():
+            if consolidou_ok:
+                QMessageBox.information(
+                    self,
+                    "Pedidos (rede)",
+                    "Consolidação concluída e a lista neste painel foi atualizada.",
+                )
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Consolidação",
+                    "Não foi possível sincronizar com o sistema de pedidos.\n\n"
+                    "A lista foi atualizada com os pedidos já disponíveis na rede.",
+                )
+
+        QTimer.singleShot(0, _msg)
 
     def _ask_session_user(self):
         log = logging.getLogger(__name__)
@@ -139,14 +184,12 @@ class AuditShellWidget(QWidget):
             self.current_user = user
             self.profile = normalize_profile(profile)
             return True
-        except Exception as e:
+        except Exception:
             log.exception("Falha no diálogo de sessão")
             QMessageBox.critical(
                 dlg,
                 "Erro de acesso",
-                "Não foi possível concluir o login.\n\n"
-                f"{type(e).__name__}: {e}\n\n"
-                "Veja logs/auditoria_app.log para o detalhe completo.",
+                erro_generico("concluir o login"),
             )
             return False
 
@@ -199,15 +242,15 @@ class AuditShellWidget(QWidget):
 
         self.btn_refresh = QPushButton("Recarregar dados")
         self.btn_refresh.setObjectName("secondaryButton")
-        self.btn_refresh.clicked.connect(lambda: self.recarregar(force=True))
+        self.btn_refresh.clicked.connect(lambda: self.recarregar(force=True, always=True))
         side_l.addWidget(self.btn_refresh)
 
         self.btn_sync_pedidos = QPushButton("Atualizar pedidos (rede)")
         self.btn_sync_pedidos.setObjectName("secondaryButton")
         self.btn_sync_pedidos.setToolTip(
             "Executa a consolidação (Iury+Thamyres → cotacao_rede.db) e volta a carregar.\n"
-            "Pedidos já gravados no consolidado são atualizados automaticamente pelo timer "
-            "se o ficheiro estiver em Z:\\…\\brasul_pedidos (ver AUDITORIA_AUTO_RELOAD_*)."
+            "Com o app aberto: recarrega ~20 s se o .db mudou; consolida ~2 min se defasado.\n"
+            "Cada pedido salvo no sistema de pedidos atualiza o consolidado em segundos (incremental)."
         )
         self.btn_sync_pedidos.clicked.connect(self._sincronizar_pedidos_rede)
         side_l.addWidget(self.btn_sync_pedidos)
@@ -254,6 +297,12 @@ class AuditShellWidget(QWidget):
         meta_col.addWidget(self.lbl_source, 0, Qt.AlignRight)
         meta_col.addWidget(self.lbl_user, 0, Qt.AlignRight)
         top_l.addLayout(meta_col)
+
+        self.lbl_demo = QLabel("")
+        self.lbl_demo.setObjectName("demoBanner")
+        self.lbl_demo.setWordWrap(True)
+        self.lbl_demo.hide()
+        content_outer.addWidget(self.lbl_demo)
 
         content_outer.addWidget(top)
 
@@ -327,16 +376,60 @@ class AuditShellWidget(QWidget):
     def _perfil(self):
         return self.profile
 
-    def recarregar(self, force=False):
-        try:
-            dados, origem = self.service.carregar(force=force)
-            self._dados = dados
-            self._data_version += 1
-            self._widget_data_version = {}
-            self.lbl_source.setText(origem)
-            self._push_data_to_current_widget()
-        except Exception as e:
-            QMessageBox.critical(self, "Erro", f"Falha ao carregar dados.\n\n{e}")
+    def recarregar(self, force=False, always=False):
+        if self._reload_busy:
+            return
+        if not always and not self.service.needs_reload(force=force):
+            return
+        self._reload_busy = True
+        self.btn_refresh.setEnabled(False)
+        self.lbl_source.setText("Fonte: carregando pedidos…")
+
+        thread = QThread(self)
+        worker = DataReloadWorker(self.service, force)
+        self._reload_thread = thread
+        self._reload_worker = worker
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(self._on_reload_finished)
+        worker.error.connect(self._on_reload_error)
+        worker.finished.connect(thread.quit)
+        worker.error.connect(thread.quit)
+        thread.finished.connect(self._clear_reload_thread)
+        thread.start()
+
+    def _clear_reload_thread(self):
+        self._reload_thread = None
+        self._reload_worker = None
+
+    def _clear_sync_thread(self):
+        self._sync_thread = None
+        self._sync_worker = None
+
+    def _on_reload_finished(self, dados, origem):
+        self._reload_busy = False
+        if not self._sync_busy:
+            self.btn_refresh.setEnabled(True)
+        self._dados = dados
+        self._data_version += 1
+        self._widget_data_version = {}
+        self.lbl_source.setText(origem)
+        if self.service.is_demo_mode():
+            self.lbl_demo.setText(
+                "Modo demonstração: não foi possível acessar os pedidos na rede. "
+                "Peça ajuda ao suporte para verificar a conexão com o servidor."
+            )
+            self.lbl_demo.show()
+        else:
+            self.lbl_demo.hide()
+        self._push_data_to_current_widget()
+
+    def _on_reload_error(self, msg: str):
+        self._reload_busy = False
+        if not self._sync_busy:
+            self.btn_refresh.setEnabled(True)
+        logging.getLogger(__name__).error("Falha ao carregar dados: %s", msg)
+        QMessageBox.critical(self, "Erro", erro_carregar("os pedidos"))
 
     def _push_data_to_current_widget(self):
         idx = self.menu.currentRow()
@@ -361,12 +454,17 @@ class AuditShellWidget(QWidget):
             self.lbl_subtitle.setText(f"Módulo ativo · {label}")
             self._push_data_to_current_widget()
 
+    def _auto_consolidar_rede(self):
+        self._consolidacao_watch.tick()
+
     def _auto_recarregar(self):
-        # Em SMB, mtime/size do cotacao_rede.db pode não refletir commits feitos pelo sistema
-        # de pedidos; invalidate + force=False ainda pode ler bytes em cache. force=True
-        # (com cópia local, se AUDITORIA_DB_COPY_ON_FORCE_RELOAD) alinha com pedidos «em tempo real».
-        if AUDITORIA_AUTO_RELOAD_FORCE:
-            self.recarregar(force=True)
-        else:
+        force = AUDITORIA_AUTO_RELOAD_FORCE
+        if force and not self.service.needs_reload(force=True):
+            return
+        if not force:
             self.service.invalidate_consolidated_cache()
-            self.recarregar(force=False)
+        self.recarregar(force=force)
+
+    def _on_consolidacao_automatica_ok(self):
+        self.service.invalidate_consolidated_cache()
+        self.recarregar(force=True, always=True)

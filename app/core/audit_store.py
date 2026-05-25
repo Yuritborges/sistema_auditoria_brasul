@@ -342,6 +342,41 @@ class AuditStore:
         finally:
             conn.close()
 
+    def clear_all_passwords(self):
+        """Remove senhas de todos os usuarios (primeiro acesso no proximo login)."""
+        conn = self._connect()
+        try:
+            conn.execute("UPDATE usuarios SET senha_hash=''")
+            conn.commit()
+        finally:
+            conn.close()
+
+    def reset_para_entrega(self, manter_usuarios=True):
+        """Zera historico e cadastros locais da auditoria; pedidos vêm do cotacao_rede.db na rede."""
+        conn = self._connect()
+        try:
+            for table in (
+                "rnc_anexos",
+                "rnc",
+                "vistorias",
+                "medicoes",
+                "aditivos_contrato",
+                "notas_fiscais",
+                "contratos",
+                "orcamentos_obra",
+                "sinapi_precos",
+                "audit_log",
+            ):
+                conn.execute(f"DELETE FROM {table}")
+            if manter_usuarios:
+                conn.execute("UPDATE usuarios SET senha_hash=''")
+            else:
+                conn.execute("DELETE FROM usuarios")
+            conn.commit()
+            conn.execute("VACUUM")
+        finally:
+            conn.close()
+
     def clear_user_password(self, nome):
         """Remove o hash para o usuario voltar ao fluxo de primeiro acesso (definir senha no login)."""
         nome = (nome or "").strip().upper()

@@ -1,3 +1,4 @@
+import logging
 import os
 from datetime import datetime
 
@@ -11,6 +12,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+from app.ui.user_messages import erro_generico
 
 
 class RelatoriosWidget(QWidget):
@@ -111,8 +114,9 @@ class RelatoriosWidget(QWidget):
         try:
             self.service.gerar_relatorio_mensal_pdf(path, "01/01/2026", datetime.now().strftime("%d/%m/%Y"), self._dados)
             self.lbl.setText(f"PDF gerado: {path}")
-        except Exception as e:
-            QMessageBox.critical(self, "Erro", f"Falha ao gerar PDF mensal.\n\n{e}")
+        except Exception:
+            logging.getLogger(__name__).exception("Falha ao gerar PDF mensal")
+            QMessageBox.critical(self, "Erro", erro_generico("gerar o relatório mensal"))
 
     def _save(self, nome, colunas, linhas):
         sugestao = os.path.join(os.getcwd(), f"{nome}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv")
@@ -122,5 +126,6 @@ class RelatoriosWidget(QWidget):
         try:
             self.service.exportar_csv(path, colunas, linhas)
             self.lbl.setText(f"Arquivo gerado: {path}")
-        except Exception as e:
-            QMessageBox.critical(self, "Erro", f"Falha ao gerar relatório.\n\n{e}")
+        except Exception:
+            logging.getLogger(__name__).exception("Falha ao gerar relatório")
+            QMessageBox.critical(self, "Erro", erro_generico("gerar o relatório"))
