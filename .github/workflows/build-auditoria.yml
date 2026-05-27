@@ -1,0 +1,51 @@
+name: Build Sistema Auditoria
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Versao do codigo (confira o commit)
+        run: |
+          git rev-parse --short HEAD
+          git log -1 --oneline
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: PyInstaller
+        run: python -m PyInstaller SistemaAuditoriaBrasul.spec --clean --noconfirm
+
+      - name: Empacotar artefato
+        run: |
+          Compress-Archive -Path "dist\SISTEMA AUDITORIA BRASUL\*" -DestinationPath SistemaAuditoriaBrasul-build.zip -Force
+
+      - name: Upload artefato (30 dias)
+        uses: actions/upload-artifact@v4
+        with:
+          name: SistemaAuditoriaBrasul-${{ github.sha }}
+          path: SistemaAuditoriaBrasul-build.zip
+          retention-days: 30
+
+      - name: Release no GitHub (somente tags v*)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: SistemaAuditoriaBrasul-build.zip
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
