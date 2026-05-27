@@ -29,6 +29,7 @@ current/
 releases/
 backups/
 *.spec
+!SistemaAuditoriaBrasul.spec
 *.egg-info/
 
 # OS
