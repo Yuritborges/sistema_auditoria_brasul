@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QVBoxLayout,
 )
@@ -18,6 +19,19 @@ from app.ui.branding import scaled_logo_pixmap
 from app.ui.win_icon import aplicar_icone_janela_win32
 from app.config import resolve_app_icon_path
 from app.ui.style import APP_STYLESHEET
+
+_MSG_SENHA_INCORRETA = "A senha foi digitada incorretamente."
+
+_ESTILO_HINT_OK = ""
+_ESTILO_HINT_ERRO = (
+    "color: #9b1c1c;"
+    "font-size: 13px;"
+    "font-weight: 700;"
+    "background: #fef2f2;"
+    "border: 1px solid #fecaca;"
+    "border-radius: 8px;"
+    "padding: 10px 12px;"
+)
 
 
 class UserSessionDialog(QDialog):
@@ -33,6 +47,7 @@ class UserSessionDialog(QDialog):
         self._users = users or []
         self._logged_user = ""
         self._logged_profile = "COMPRADOR"
+        self._login_em_andamento = False
         ic = criar_icone_aplicativo()
         if not ic.isNull():
             self.setWindowIcon(ic)
@@ -83,19 +98,14 @@ class UserSessionDialog(QDialog):
         self.ed_password.setEchoMode(QLineEdit.Password)
         self.ed_password.setPlaceholderText("Senha")
         self.ed_password.returnPressed.connect(self._accept_login)
-        self.ed_password.textChanged.connect(self._on_password_edited)
         card_l.addWidget(self.ed_password)
 
         self.lbl_hint = QLabel("")
         self.lbl_hint.setObjectName("loginHint")
         self.lbl_hint.setWordWrap(True)
+        self.lbl_hint.setAlignment(Qt.AlignCenter)
+        self.lbl_hint.setMinimumHeight(32)
         card_l.addWidget(self.lbl_hint)
-
-        self.lbl_error = QLabel("")
-        self.lbl_error.setObjectName("loginError")
-        self.lbl_error.setWordWrap(True)
-        self.lbl_error.hide()
-        card_l.addWidget(self.lbl_error)
 
         self.lbl_selected = QLabel("Usuário selecionado: -")
         self.lbl_selected.setObjectName("muted")
@@ -120,12 +130,10 @@ class UserSessionDialog(QDialog):
         self._reload_users()
 
     def keyPressEvent(self, event: QKeyEvent):
-        # Esc fecha o diálogo por padrão; usuários costumam apertar Esc para “apagar” a senha
-        # e o app encerrava sem explicação (AuditShellWidget chama quit se o login falhar).
         if event.key() == Qt.Key.Key_Escape:
             if (self.ed_password.text() or "").strip():
                 self.ed_password.clear()
-                self.lbl_error.hide()
+                self._limpar_erro_login()
                 event.accept()
                 return
         super().keyPressEvent(event)
@@ -134,11 +142,18 @@ class UserSessionDialog(QDialog):
         logging.getLogger(__name__).info("Login encerrado sem sucesso (Cancelar, Esc ou fechar janela).")
         super().reject()
 
-    def _on_password_edited(self, _t):
-        try:
-            self.lbl_error.hide()
-        except Exception:
-            logging.getLogger(__name__).exception("Falha ao atualizar estado do campo de senha")
+    def _mostrar_erro(self, texto: str, alerta_modal: bool = False):
+        self.lbl_hint.setStyleSheet(_ESTILO_HINT_ERRO)
+        self.lbl_hint.setText(texto)
+        self.lbl_hint.show()
+        self.lbl_hint.raise_()
+        if alerta_modal:
+            QMessageBox.warning(self, "Acesso negado", texto)
+        self.ed_password.setFocus()
+
+    def _limpar_erro_login(self):
+        self.lbl_hint.setStyleSheet(_ESTILO_HINT_OK)
+        self._atualizar_dica_senha()
 
     def _atualizar_dica_senha(self):
         if not self._logged_user:
@@ -183,46 +198,45 @@ class UserSessionDialog(QDialog):
         self._logged_user = nome
         self._logged_profile = normalize_profile(perfil)
         self.lbl_selected.setText(f"Usuário selecionado: {nome.title()}")
-        self.lbl_error.hide()
-        self._atualizar_dica_senha()
         self.ed_password.clear()
+        self._limpar_erro_login()
         self.ed_password.setFocus()
 
     def _accept_login(self):
+        if self._login_em_andamento:
+            return
+        self._login_em_andamento = True
         log = logging.getLogger(__name__)
-        self.lbl_error.hide()
         try:
             if not self._logged_user:
-                self.lbl_error.setText("Selecione um usuário (botão acima).")
-                self.lbl_error.show()
+                self._mostrar_erro("Selecione um usuário (botão acima).", alerta_modal=True)
                 return
             senha = self.ed_password.text()
             if not self.service.usuario_tem_senha(self._logged_user):
                 if not senha or len(senha) < 4:
-                    self.lbl_error.setText("A senha deve ter pelo menos 4 caracteres.")
-                    self.lbl_error.show()
-                    self.ed_password.setFocus()
+                    self._mostrar_erro("A senha deve ter pelo menos 4 caracteres.", alerta_modal=True)
                     return
+                self._limpar_erro_login()
                 self.service.definir_senha_usuario(self._logged_user, senha, self._logged_user)
                 self.accept()
                 return
-            if not self.service.autenticar_usuario(self._logged_user, senha):
-                self.lbl_error.setText(
-                    "A senha está incorreta. Por favor, verifique novamente.\n"
-                    "Confira se o Caps Lock está ativado e se digitou o usuário certo."
-                )
-                self.lbl_error.show()
-                self.ed_password.selectAll()
-                self.ed_password.setFocus()
+            if not (senha or "").strip():
+                self._mostrar_erro("Digite sua senha.", alerta_modal=True)
                 return
+            if not self.service.autenticar_usuario(self._logged_user, senha):
+                log.info("Login recusado: senha incorreta para %s", self._logged_user)
+                self._mostrar_erro(_MSG_SENHA_INCORRETA, alerta_modal=True)
+                return
+            self._limpar_erro_login()
             self.accept()
         except Exception:
             log.exception("Falha ao autenticar")
-            self.lbl_error.setText(
-                "Não foi possível validar o acesso. Tente novamente ou peça ajuda ao suporte."
+            self._mostrar_erro(
+                "Não foi possível validar o acesso. Tente novamente ou peça ajuda ao suporte.",
+                alerta_modal=True,
             )
-            self.lbl_error.show()
-            self.ed_password.setFocus()
+        finally:
+            self._login_em_andamento = False
 
     def selected(self):
         return self._logged_user or "ADMIN", normalize_profile(self._logged_profile)

@@ -220,7 +220,7 @@ class AuditShellWidget(QWidget):
         brand_box.setSpacing(4)
         self.lbl_brand = QLabel("Brasul")
         self.lbl_brand.setObjectName("sidebarBrand")
-        self.lbl_tagline = QLabel("Auditoria & compras")
+        self.lbl_tagline = QLabel("AUDITORIA & COMPRAS")
         self.lbl_tagline.setObjectName("sidebarTagline")
         if self.logo_sidebar:
             brand_box.addWidget(self.lbl_tagline)
@@ -230,7 +230,7 @@ class AuditShellWidget(QWidget):
         side_l.addLayout(brand_box)
 
         lbl_mod = QLabel("Módulos")
-        lbl_mod.setObjectName("sectionTitle")
+        lbl_mod.setObjectName("sidebarSectionTitle")
         side_l.addWidget(lbl_mod)
 
         self.menu = QListWidget()
@@ -241,12 +241,12 @@ class AuditShellWidget(QWidget):
         side_l.addWidget(self.menu, 1)
 
         self.btn_refresh = QPushButton("Recarregar dados")
-        self.btn_refresh.setObjectName("secondaryButton")
+        self.btn_refresh.setObjectName("sidebarActionButton")
         self.btn_refresh.clicked.connect(lambda: self.recarregar(force=True, always=True))
         side_l.addWidget(self.btn_refresh)
 
         self.btn_sync_pedidos = QPushButton("Atualizar pedidos (rede)")
-        self.btn_sync_pedidos.setObjectName("secondaryButton")
+        self.btn_sync_pedidos.setObjectName("sidebarActionButton")
         self.btn_sync_pedidos.setToolTip(
             "Executa a consolidação (Iury+Thamyres → cotacao_rede.db) e volta a carregar.\n"
             "Com o app aberto: recarrega ~20 s se o .db mudou; consolida ~2 min se defasado.\n"
@@ -274,10 +274,10 @@ class AuditShellWidget(QWidget):
         self.lbl_subtitle = QLabel("Resumo executivo, auditoria e controle gerencial")
         self.lbl_subtitle.setObjectName("pageSubtitle")
         self.lbl_source = QLabel("Fonte: carregando...")
-        self.lbl_source.setObjectName("muted")
+        self.lbl_source.setObjectName("topbarMetaLine")
         self.lbl_source.setWordWrap(True)
         self.lbl_user = QLabel(f"Perfil: {self.profile}  •  Usuário: {self.current_user}")
-        self.lbl_user.setObjectName("muted")
+        self.lbl_user.setObjectName("topbarMetaLine")
 
         head_row = QHBoxLayout()
         head_row.setSpacing(14)
@@ -291,12 +291,15 @@ class AuditShellWidget(QWidget):
         head_row.addLayout(text_col, 1)
         top_l.addLayout(head_row, 1)
 
-        meta_col = QVBoxLayout()
-        meta_col.setSpacing(6)
+        meta_card = QFrame()
+        meta_card.setObjectName("topbarMeta")
+        meta_col = QVBoxLayout(meta_card)
+        meta_col.setContentsMargins(14, 10, 14, 10)
+        meta_col.setSpacing(4)
         meta_col.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         meta_col.addWidget(self.lbl_source, 0, Qt.AlignRight)
         meta_col.addWidget(self.lbl_user, 0, Qt.AlignRight)
-        top_l.addLayout(meta_col)
+        top_l.addWidget(meta_card, 0, Qt.AlignRight | Qt.AlignVCenter)
 
         self.lbl_demo = QLabel("")
         self.lbl_demo.setObjectName("demoBanner")

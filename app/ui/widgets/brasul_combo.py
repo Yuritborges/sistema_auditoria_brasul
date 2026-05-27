@@ -14,19 +14,19 @@ _ESTILO_BOTAO_SETA = """
 QToolButton#brasulComboDropBtn,
 QToolButton#brasulDateDropBtn {
     border: none;
-    border-left: 1px solid #e2e8f0;
+    border-left: 1px solid #e8e8e8;
     border-top-right-radius: 9px;
     border-bottom-right-radius: 9px;
-    background: #f8fafc;
+    background: #fafafa;
     padding: 0 4px;
 }
 QToolButton#brasulComboDropBtn:hover,
 QToolButton#brasulDateDropBtn:hover {
-    background: #eef2f7;
+    background: #fdecec;
 }
 QToolButton#brasulComboDropBtn:pressed,
 QToolButton#brasulDateDropBtn:pressed {
-    background: #e2e8f0;
+    background: #f5c6c6;
 }
 """
 

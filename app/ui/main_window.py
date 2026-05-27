@@ -20,7 +20,7 @@ class MainWindowPatrao(QMainWindow):
 
         self.setStyleSheet("""
             QMainWindow {
-                background: #f1f5f9;
+                background: #f4f5f7;
             }
         """)
 
