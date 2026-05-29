@@ -204,6 +204,16 @@ def itens_distintos_dos_pedidos(dados) -> list[str]:
     return sorted(out, key=lambda s: s.upper())
 
 
+def solicitantes_distintos_dos_pedidos(dados):
+    """Nomes em «Material solicitado por» para filtro na auditoria."""
+    out = set()
+    for d in dados:
+        t = (d.get("material_solicitado_por") or "").strip()
+        if t:
+            out.add(t)
+    return sorted(out, key=lambda s: s.upper())
+
+
 class BrasulComboBox(QComboBox):
     def __init__(self, parent=None):
         super().__init__(parent)

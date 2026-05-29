@@ -1,9 +1,9 @@
 # Gera SistemaAuditoriaBrasul com PyInstaller, copia para releases/ (timestamp) e current/.
 # Uso: powershell -ExecutionPolicy Bypass -File tools\build_release.ps1
 #
-# Backup opcional ANTES do build (desligado por defeito — nao cria pastas em Z:\0 OBRAS\):
+# Backup opcional ANTES do build (desligado por defeito):
 #   $env:AUDITORIA_RELEASE_BACKUP = "1"
-# Copia o projeto para a pasta PAI com nome sistema_auditoria_brasul_BACKUP_YYYYMMDD_HHmm
+# Copia o codigo-fonte para backups\pre_build_YYYYMMDD_HHmm DENTRO do projeto (nao em Z:\0 OBRAS\).
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path $PSScriptRoot -Parent
@@ -14,17 +14,18 @@ $wb = if ($null -ne $env:AUDITORIA_RELEASE_BACKUP) { "$env:AUDITORIA_RELEASE_BAC
 $wantBackup = @("1", "true", "yes", "sim") -contains $wb.Trim().ToLowerInvariant()
 $backupDest = $null
 if ($wantBackup) {
-    $parent = Split-Path $Root -Parent
-    $backupDest = Join-Path $parent "sistema_auditoria_brasul_BACKUP_$stamp"
-    Write-Host "[0/4] Backup completo (AUDITORIA_RELEASE_BACKUP=1) -> $backupDest ..."
+    $backupDest = Join-Path $Root "backups\pre_build_$stamp"
+    Write-Host "[0/4] Backup do codigo (AUDITORIA_RELEASE_BACKUP=1) -> $backupDest ..."
+    New-Item -ItemType Directory -Path (Join-Path $Root "backups") -Force | Out-Null
     New-Item -ItemType Directory -Path $backupDest -Force | Out-Null
-    & robocopy.exe $Root $backupDest /E /XD .venv __pycache__ /NFL /NDL /NJH /NJS /NP /R:2 /W:2 | Out-Null
+    # So codigo-fonte (sem dist/build/releases nem copias anteriores em backups/).
+    & robocopy.exe $Root $backupDest /E /XD .venv __pycache__ backups dist build releases .pytest_cache /NFL /NDL /NJH /NJS /NP /R:2 /W:2 | Out-Null
     $rc = $LASTEXITCODE
     if ($rc -ge 8) {
-        throw "Backup (robocopy) falhou com codigo $rc. Verifique espaco e permissoes em $parent"
+        throw "Backup (robocopy) falhou com codigo $rc. Verifique espaco em $backupDest"
     }
 } else {
-    Write-Host "[0/4] Backup pre-build desativado (omitido para nao duplicar o projeto fora da pasta). Defina AUDITORIA_RELEASE_BACKUP=1 se quiser a copia antiga."
+    Write-Host "[0/4] Backup pre-build desativado (omitido). Defina AUDITORIA_RELEASE_BACKUP=1 para copia em backups\pre_build_* dentro do projeto."
 }
 
 $PyInstaller = Join-Path $Root ".venv\Scripts\pyinstaller.exe"

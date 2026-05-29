@@ -1,4 +1,6 @@
-# Move pastas sistema_auditoria_brasul_BACKUP_* de Z:\0 OBRAS\ para backups\legacy_snapshots\ dentro do projeto.
+# Uso unico: move pastas antigas sistema_auditoria_brasul_BACKUP_* de Z:\0 OBRAS\
+# para backups\legacy_snapshots\ dentro do projeto (limpeza da rede).
+# Novos builds nao criam mais pastas na pasta pai — ver tools\build_release.ps1.
 $ErrorActionPreference = "Stop"
 $Root = Split-Path $PSScriptRoot -Parent
 $parent = Split-Path $Root -Parent

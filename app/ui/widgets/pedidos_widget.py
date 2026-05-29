@@ -22,8 +22,10 @@ from app.ui.widgets.brasul_combo import (
     garantir_combo_digitavel,
     itens_distintos_dos_pedidos,
     preencher_combo_filtro,
+    solicitantes_distintos_dos_pedidos,
 )
 from app.ui.widgets.brasul_date_edit import BrasulDateEdit
+from app.services.auditoria_service import texto_contem_busca
 
 PAGE_CHUNK = 300
 
@@ -66,11 +68,13 @@ class PedidosWidget(QWidget):
         self.cb_status = BrasulComboBox()
         self.cb_status.addItems(["TODOS", "OK", "Sem PDF", "Sem comprador", "Crítico"])
         self.cb_forn = BrasulComboBox()
+        self.cb_solicitante = BrasulComboBox()
         self.cb_item = BrasulComboBox()
         for cb, ph in (
             (self.cb_comprador, "TODOS ou digite para buscar…"),
             (self.cb_obra, "TODAS ou digite para buscar…"),
             (self.cb_forn, "TODOS ou digite para buscar…"),
+            (self.cb_solicitante, "TODOS ou digite quem solicitou…"),
             (self.cb_item, "Item / material ou digite para buscar…"),
         ):
             garantir_combo_digitavel(cb)
@@ -108,8 +112,10 @@ class PedidosWidget(QWidget):
         filtros.addWidget(self.cb_status, 1, 1)
         filtros.addWidget(_fl("Fornecedor"), 1, 2)
         filtros.addWidget(self.cb_forn, 1, 3)
-        filtros.addWidget(_fl("Item"), 2, 0)
-        filtros.addWidget(self.cb_item, 2, 1, 1, 3)
+        filtros.addWidget(_fl("Solicitante"), 2, 0)
+        filtros.addWidget(self.cb_solicitante, 2, 1)
+        filtros.addWidget(_fl("Item"), 2, 2)
+        filtros.addWidget(self.cb_item, 2, 3)
         filtros.addWidget(_fl("Período"), 3, 0)
         per = QHBoxLayout()
         per.setSpacing(8)
@@ -152,9 +158,22 @@ class PedidosWidget(QWidget):
         tbl_card.setObjectName("panelCard")
         tbl_l = QVBoxLayout(tbl_card)
         tbl_l.setContentsMargins(12, 12, 12, 12)
-        self.tbl = QTableWidget(0, 11)
+        self.tbl = QTableWidget(0, 12)
         self.tbl.setHorizontalHeaderLabels(
-            ["Pedido", "Data", "Comprador", "Empresa", "Fornecedor", "Obra", "Valor", "Status", "Cond.", "Forma", "PDF"]
+            [
+                "Pedido",
+                "Data",
+                "Comprador",
+                "Solicitante",
+                "Empresa",
+                "Fornecedor",
+                "Obra",
+                "Valor",
+                "Status",
+                "Cond.",
+                "Forma",
+                "PDF",
+            ]
         )
         self.tbl.verticalHeader().setVisible(False)
         self.tbl.setAlternatingRowColors(True)
@@ -163,15 +182,16 @@ class PedidosWidget(QWidget):
         self.tbl.horizontalHeader().setStretchLastSection(False)
         self.tbl.setColumnWidth(0, 72)
         self.tbl.setColumnWidth(1, 92)
-        self.tbl.setColumnWidth(2, 100)
-        self.tbl.setColumnWidth(3, 92)
-        self.tbl.setColumnWidth(4, 170)
-        self.tbl.setColumnWidth(5, 220)
-        self.tbl.setColumnWidth(6, 104)
-        self.tbl.setColumnWidth(7, 100)
-        self.tbl.setColumnWidth(8, 82)
-        self.tbl.setColumnWidth(9, 82)
+        self.tbl.setColumnWidth(2, 88)
+        self.tbl.setColumnWidth(3, 100)
+        self.tbl.setColumnWidth(4, 80)
+        self.tbl.setColumnWidth(5, 150)
+        self.tbl.setColumnWidth(6, 180)
+        self.tbl.setColumnWidth(7, 96)
+        self.tbl.setColumnWidth(8, 92)
+        self.tbl.setColumnWidth(9, 72)
         self.tbl.setColumnWidth(10, 72)
+        self.tbl.setColumnWidth(11, 68)
         configurar_tabela_consulta(self.tbl)
         tbl_l.addWidget(self.tbl)
         root.addWidget(tbl_card, 1)
@@ -183,6 +203,7 @@ class PedidosWidget(QWidget):
         obra_atual = (self.cb_obra.currentText() or "").strip()
         status_atual = (self.cb_status.currentText() or "").strip()
         fornecedor_atual = self.cb_forn.currentText()
+        solicitante_atual = (self.cb_solicitante.currentText() or "").strip()
         item_atual = self._item_filtro_ativo
 
         self._dados = list(dados)
@@ -218,6 +239,13 @@ class PedidosWidget(QWidget):
             opcao_todos="TODOS",
         )
         preencher_combo_filtro(
+            self.cb_solicitante,
+            solicitantes_distintos_dos_pedidos(dados),
+            solicitante_atual or "TODOS",
+            "TODOS ou digite quem solicitou…",
+            opcao_todos="TODOS",
+        )
+        preencher_combo_filtro(
             self.cb_item,
             itens_distintos_dos_pedidos(dados),
             item_atual,
@@ -237,6 +265,7 @@ class PedidosWidget(QWidget):
         obra = self.cb_obra.currentText().strip().upper()
         status = self.cb_status.currentText().strip().upper()
         fornecedor = self.cb_forn.currentText().strip().upper()
+        solicitante = self.cb_solicitante.currentText().strip().upper()
         item = self.cb_item.currentText().strip()
         self._item_filtro_ativo = item
         item = item.upper()
@@ -259,6 +288,10 @@ class PedidosWidget(QWidget):
             ):
                 continue
             if item and item not in (d.get("itens_texto") or "").upper():
+                continue
+            if solicitante != "TODOS" and not texto_contem_busca(
+                d.get("material_solicitado_por") or "", solicitante
+            ):
                 continue
             pd = self._pedido_data(d)
             if pd is None:
@@ -284,6 +317,7 @@ class PedidosWidget(QWidget):
             "comprador": self.cb_comprador.currentText(),
             "obra": self.cb_obra.currentText(),
             "fornecedor": self.cb_forn.currentText(),
+            "solicitante": self.cb_solicitante.currentText(),
             "item": self.cb_item.currentText(),
         }
         total = self.service.buscar_pdfs_filtrados(self._filtrados, filtros)
@@ -305,6 +339,7 @@ class PedidosWidget(QWidget):
                     str(d.get("numero") or ""),
                     str(d.get("data_pedido") or ""),
                     str(d.get("comprador") or "SEM COMPRADOR"),
+                    str(d.get("material_solicitado_por") or "—"),
                     str(d.get("empresa_faturadora") or ""),
                     str(d.get("fornecedor_nome") or ""),
                     str(d.get("obra_nome") or ""),
@@ -316,10 +351,10 @@ class PedidosWidget(QWidget):
                 ]
                 for c, v in enumerate(vals):
                     it = QTableWidgetItem(v)
-                    if c in (0, 1, 2, 6, 7, 10):
+                    if c in (0, 1, 2, 3, 7, 8, 11):
                         it.setTextAlignment(Qt.AlignCenter)
                     self.tbl.setItem(i, c, it)
-                it_pdf = self.tbl.item(i, 10)
+                it_pdf = self.tbl.item(i, 11)
                 if it_pdf and path_pdf:
                     it_pdf.setData(Qt.ItemDataRole.UserRole, path_pdf)
                     it_pdf.setToolTip(path_pdf)
@@ -327,9 +362,9 @@ class PedidosWidget(QWidget):
             self.tbl.setUpdatesEnabled(True)
 
     def _on_pdf_cell_clicked(self, row, col):
-        if col != 10:
+        if col != 11:
             return
-        it = self.tbl.item(row, 10)
+        it = self.tbl.item(row, 11)
         if not it:
             return
         path = it.data(Qt.ItemDataRole.UserRole)

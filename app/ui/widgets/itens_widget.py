@@ -20,6 +20,7 @@ from app.ui.widgets.brasul_combo import (
     garantir_combo_digitavel,
     itens_distintos_dos_pedidos,
     preencher_combo_filtro,
+    solicitantes_distintos_dos_pedidos,
 )
 from app.ui.widgets.brasul_date_edit import BrasulDateEdit
 
@@ -42,8 +43,8 @@ class ItensWidget(QWidget):
         ht = QLabel("Auditoria por item / material")
         ht.setObjectName("moduleHeroTitle")
         hd = QLabel(
-            "Mesmos filtros de Pedidos: comprador, obra, status, fornecedor, item e período. "
-            "Veja quantidade e unidade por linha e o total comprado por obra."
+            "Filtre por solicitante, material, obra, fornecedor e período. "
+            "Só solicitante (ex.: André) lista todos os itens dos pedidos dele; material restringe a descrição."
         )
         hd.setObjectName("moduleHeroDesc")
         hd.setWordWrap(True)
@@ -63,11 +64,13 @@ class ItensWidget(QWidget):
         self.cb_status = BrasulComboBox()
         self.cb_status.addItems(["TODOS", "OK", "Sem PDF", "Sem comprador", "Crítico"])
         self.cb_forn = BrasulComboBox()
+        self.cb_solicitante = BrasulComboBox()
         self.cb_item = BrasulComboBox()
         for cb, ph in (
             (self.cb_comprador, "TODOS ou digite para buscar…"),
             (self.cb_obra, "TODAS ou digite para buscar…"),
             (self.cb_forn, "TODOS ou digite para buscar…"),
+            (self.cb_solicitante, "TODOS ou digite quem solicitou…"),
             (self.cb_item, "Item / material ou digite para buscar…"),
         ):
             garantir_combo_digitavel(cb)
@@ -106,8 +109,10 @@ class ItensWidget(QWidget):
         filtros.addWidget(self.cb_status, 1, 1)
         filtros.addWidget(_fl("Fornecedor"), 1, 2)
         filtros.addWidget(self.cb_forn, 1, 3)
-        filtros.addWidget(_fl("Item"), 2, 0)
-        filtros.addWidget(self.cb_item, 2, 1, 1, 3)
+        filtros.addWidget(_fl("Solicitante"), 2, 0)
+        filtros.addWidget(self.cb_solicitante, 2, 1)
+        filtros.addWidget(_fl("Item"), 2, 2)
+        filtros.addWidget(self.cb_item, 2, 3)
         filtros.addWidget(_fl("Período"), 3, 0)
         per = QHBoxLayout()
         per.setSpacing(8)
@@ -157,24 +162,36 @@ class ItensWidget(QWidget):
         tbl_card.setObjectName("panelCard")
         tbl_l = QVBoxLayout(tbl_card)
         tbl_l.setContentsMargins(12, 12, 12, 12)
-        self.tbl = QTableWidget(0, 9)
+        self.tbl = QTableWidget(0, 10)
         self.tbl.setHorizontalHeaderLabels(
-            ["Item", "Obra", "Fornecedor", "Qtd", "Unid.", "Vlr unit.", "Valor item", "Data", "Pedido"]
+            [
+                "Item",
+                "Obra",
+                "Fornecedor",
+                "Solicitante",
+                "Qtd",
+                "Unid.",
+                "Vlr unit.",
+                "Valor item",
+                "Data",
+                "Pedido",
+            ]
         )
         self.tbl.verticalHeader().setVisible(False)
         self.tbl.setAlternatingRowColors(True)
         self.tbl.setShowGrid(False)
         self.tbl.setFocusPolicy(Qt.NoFocus)
         self.tbl.horizontalHeader().setStretchLastSection(False)
-        self.tbl.setColumnWidth(0, 220)
-        self.tbl.setColumnWidth(1, 150)
-        self.tbl.setColumnWidth(2, 140)
-        self.tbl.setColumnWidth(3, 64)
-        self.tbl.setColumnWidth(4, 48)
-        self.tbl.setColumnWidth(5, 84)
-        self.tbl.setColumnWidth(6, 92)
-        self.tbl.setColumnWidth(7, 84)
-        self.tbl.setColumnWidth(8, 64)
+        self.tbl.setColumnWidth(0, 200)
+        self.tbl.setColumnWidth(1, 130)
+        self.tbl.setColumnWidth(2, 120)
+        self.tbl.setColumnWidth(3, 90)
+        self.tbl.setColumnWidth(4, 56)
+        self.tbl.setColumnWidth(5, 44)
+        self.tbl.setColumnWidth(6, 80)
+        self.tbl.setColumnWidth(7, 88)
+        self.tbl.setColumnWidth(8, 80)
+        self.tbl.setColumnWidth(9, 60)
         configurar_tabela_consulta(self.tbl)
         tbl_l.addWidget(self.tbl)
         root.addWidget(tbl_card, 1)
@@ -184,6 +201,7 @@ class ItensWidget(QWidget):
         obra_atual = (self.cb_obra.currentText() or "").strip()
         status_atual = (self.cb_status.currentText() or "").strip()
         fornecedor_atual = self.cb_forn.currentText()
+        solicitante_atual = (self.cb_solicitante.currentText() or "").strip()
         item_atual = self._item_filtro_ativo
 
         self._dados = list(dados)
@@ -218,6 +236,13 @@ class ItensWidget(QWidget):
             opcao_todos="TODOS",
         )
         preencher_combo_filtro(
+            self.cb_solicitante,
+            solicitantes_distintos_dos_pedidos(dados),
+            solicitante_atual or "TODOS",
+            "TODOS ou digite quem solicitou…",
+            opcao_todos="TODOS",
+        )
+        preencher_combo_filtro(
             self.cb_item,
             itens_distintos_dos_pedidos(dados),
             item_atual,
@@ -240,6 +265,7 @@ class ItensWidget(QWidget):
             "obra": self.cb_obra.currentText(),
             "status": self.cb_status.currentText(),
             "fornecedor": self.cb_forn.currentText(),
+            "solicitante": self.cb_solicitante.currentText(),
             "item": item,
             "data_ini": d_ini,
             "data_fim": d_fim,
@@ -247,8 +273,12 @@ class ItensWidget(QWidget):
 
     def aplicar_filtros(self):
         filtros = self._filtros_dict()
-        if not filtros.get("item"):
-            self.lbl_resumo.setText("Informe o item/material no filtro e clique em Filtrar.")
+        item_txt = (filtros.get("item") or "").strip()
+        sol = (filtros.get("solicitante") or "TODOS").strip().upper()
+        if not item_txt and (not sol or sol == "TODOS"):
+            self.lbl_resumo.setText(
+                "Informe o material ou escolha quem solicitou (ex.: André) e clique em Filtrar."
+            )
             self.lbl_stats.setText("")
             self.lbl_totais_obra.setText("")
             self.tbl.setRowCount(0)
@@ -273,6 +303,7 @@ class ItensWidget(QWidget):
                     r["item"],
                     r["obra"],
                     r["fornecedor"],
+                    r.get("solicitante") or "—",
                     self._fmt_qtd(r.get("quantidade")),
                     r.get("unidade") or "—",
                     self._fmt(r.get("valor_unitario")),
@@ -282,7 +313,7 @@ class ItensWidget(QWidget):
                 ]
                 for c, v in enumerate(vals):
                     it = QTableWidgetItem(v)
-                    if c in (3, 4, 5, 6, 7, 8):
+                    if c in (4, 5, 6, 7, 8, 9):
                         it.setTextAlignment(Qt.AlignCenter)
                     self.tbl.setItem(i, c, it)
         finally:

@@ -3,12 +3,26 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import unicodedata
 from datetime import date, datetime
 import re
 import json
 import csv
 import sqlite3
 import logging
+
+
+def normalizar_texto_busca(texto: str) -> str:
+    """Maiúsculas sem acento para busca (Andre encontra ANDRÉ)."""
+    t = (texto or "").strip().upper()
+    return "".join(c for c in unicodedata.normalize("NFD", t) if unicodedata.category(c) != "Mn")
+
+
+def texto_contem_busca(valor: str, termo: str) -> bool:
+    termo_n = normalizar_texto_busca(termo)
+    if not termo_n:
+        return True
+    return termo_n in normalizar_texto_busca(valor)
 
 from app.config import (
     BASE_DIR,
@@ -129,6 +143,15 @@ class AuditoriaService:
 
         self._pdf_exists_cache = {}
         self._summary_cache = {}
+
+        if db_path and os.path.isfile(db_path):
+            from app.data.auditoria_repository import ensure_material_solicitado_por_column
+
+            if not ensure_material_solicitado_por_column(db_path):
+                self.logger.warning(
+                    "Banco sem coluna material_solicitado_por e sem permissao para ALTER; "
+                    "leitura com campo vazio ate consolidar pedidos."
+                )
 
         tmp_db = None
         read_path = db_path
@@ -731,13 +754,15 @@ class AuditoriaService:
                 desc = (lin.get("descricao") or "").strip()
                 if not desc:
                     continue
-                if termo_upper and termo_upper not in desc.upper():
+                if termo_upper and normalizar_texto_busca(termo_upper) not in normalizar_texto_busca(desc):
                     continue
+                sol = (pedido.get("material_solicitado_por") or "").strip()
                 linhas.append(
                     {
                         "item": desc,
                         "obra": obra,
                         "fornecedor": fornecedor,
+                        "solicitante": sol,
                         "quantidade": float(lin.get("quantidade") or 0),
                         "unidade": (lin.get("unidade") or "").strip().upper(),
                         "valor_unitario": float(lin.get("valor_unitario") or 0),
@@ -748,13 +773,15 @@ class AuditoriaService:
                 )
             return linhas
         for desc in pedido.get("itens_lista") or []:
-            if termo_upper and termo_upper not in desc.upper():
+            if termo_upper and normalizar_texto_busca(termo_upper) not in normalizar_texto_busca(desc):
                 continue
+            sol = (pedido.get("material_solicitado_por") or "").strip()
             linhas.append(
                 {
                     "item": desc,
                     "obra": obra,
                     "fornecedor": fornecedor,
+                    "solicitante": sol,
                     "quantidade": 0.0,
                     "unidade": "",
                     "valor_unitario": 0.0,
@@ -789,6 +816,7 @@ class AuditoriaService:
         obra = (filtros.get("obra") or "TODAS").strip().upper()
         status = (filtros.get("status") or "TODOS").strip().upper()
         fornecedor = (filtros.get("fornecedor") or "TODOS").strip().upper()
+        solicitante = (filtros.get("solicitante") or "TODOS").strip().upper()
         item_txt = (filtros.get("item") or "").strip().upper()
         d_ini = filtros.get("data_ini")
         d_fim = filtros.get("data_fim")
@@ -807,6 +835,10 @@ class AuditoriaService:
                 fornecedor
                 and fornecedor != "TODOS"
                 and fornecedor not in (d.get("fornecedor_nome") or "").upper()
+            ):
+                continue
+            if solicitante != "TODOS" and not texto_contem_busca(
+                d.get("material_solicitado_por") or "", solicitante
             ):
                 continue
             if item_txt and item_txt not in (d.get("itens_texto") or "").upper():
@@ -833,6 +865,7 @@ class AuditoriaService:
             (filtros.get("comprador") or "").strip().upper(),
             (filtros.get("status") or "").strip().upper(),
             (filtros.get("fornecedor") or "").strip().upper(),
+            (filtros.get("solicitante") or "").strip().upper(),
             str(filtros.get("data_ini")),
             str(filtros.get("data_fim")),
             len(dados),

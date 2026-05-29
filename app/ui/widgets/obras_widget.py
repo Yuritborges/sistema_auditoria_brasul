@@ -20,6 +20,7 @@ from app.ui.widgets.brasul_combo import (
     garantir_combo_digitavel,
     itens_distintos_dos_pedidos,
     preencher_combo_filtro,
+    solicitantes_distintos_dos_pedidos,
 )
 from app.services.cadastros_rede import nomes_obras_cadastro
 from app.ui.widgets.brasul_date_edit import BrasulDateEdit
@@ -63,11 +64,13 @@ class ObrasWidget(QWidget):
         self.cb_fornecedor = BrasulComboBox()
         self.cb_item = BrasulComboBox()
         self.cb_comprador = BrasulComboBox()
+        self.cb_solicitante = BrasulComboBox()
         for cb, ph in (
             (self.cb_obra, "TODAS ou digite para buscar obra…"),
             (self.cb_fornecedor, "Fornecedor ou digite para buscar…"),
             (self.cb_item, "Material / item ou digite para buscar…"),
             (self.cb_comprador, "Comprador ou digite para buscar…"),
+            (self.cb_solicitante, "Quem solicitou o material…"),
         ):
             garantir_combo_digitavel(cb)
             le = cb.lineEdit()
@@ -115,9 +118,11 @@ class ObrasWidget(QWidget):
         filtros.addWidget(self.cb_fornecedor, 0, 3)
         filtros.addWidget(_fl("Item"), 1, 0)
         filtros.addWidget(self.cb_item, 1, 1)
-        filtros.addWidget(_fl("Comprador"), 1, 2)
-        filtros.addWidget(self.cb_comprador, 1, 3)
-        filtros.addWidget(_fl("Período"), 2, 0)
+        filtros.addWidget(_fl("Solicitante"), 1, 2)
+        filtros.addWidget(self.cb_solicitante, 1, 3)
+        filtros.addWidget(_fl("Comprador"), 2, 0)
+        filtros.addWidget(self.cb_comprador, 2, 1, 1, 3)
+        filtros.addWidget(_fl("Período"), 3, 0)
         period_row = QHBoxLayout()
         period_row.setSpacing(10)
         period_row.addWidget(self.dt_ini, 1)
@@ -127,14 +132,14 @@ class ObrasWidget(QWidget):
         period_row.addWidget(self.dt_fim, 1)
         period_wrap = QWidget()
         period_wrap.setLayout(period_row)
-        filtros.addWidget(period_wrap, 2, 1, 1, 2)
+        filtros.addWidget(period_wrap, 3, 1, 1, 2)
         acoes = QHBoxLayout()
         acoes.setSpacing(8)
         acoes.addWidget(btn_limpar)
         acoes.addWidget(btn)
         acoes_w = QWidget()
         acoes_w.setLayout(acoes)
-        filtros.addWidget(acoes_w, 2, 3)
+        filtros.addWidget(acoes_w, 3, 3)
         c_layout.addLayout(filtros)
         root.addWidget(card)
 
@@ -198,7 +203,7 @@ class ObrasWidget(QWidget):
 
     def _limpar_filtros_secundarios(self):
         self._item_filtro_ativo = ""
-        for cb in (self.cb_fornecedor, self.cb_item, self.cb_comprador):
+        for cb in (self.cb_fornecedor, self.cb_item, self.cb_comprador, self.cb_solicitante):
             le = cb.lineEdit()
             if le is not None:
                 le.clear()
@@ -238,6 +243,7 @@ class ObrasWidget(QWidget):
         fornecedor_atual = self.cb_fornecedor.currentText()
         item_atual = self._item_filtro_ativo
         comprador_atual = self.cb_comprador.currentText()
+        solicitante_atual = (self.cb_solicitante.currentText() or "").strip()
         dt_ini_atual = self.dt_ini.date()
         dt_fim_atual = self.dt_fim.date()
 
@@ -278,6 +284,13 @@ class ObrasWidget(QWidget):
             comprador_atual,
             "Comprador ou digite para buscar…",
         )
+        preencher_combo_filtro(
+            self.cb_solicitante,
+            solicitantes_distintos_dos_pedidos(dados),
+            solicitante_atual or "",
+            "Quem solicitou o material…",
+            iniciar_vazio=not solicitante_atual,
+        )
         self.dt_ini.setDate(dt_ini_atual)
         self.dt_fim.setDate(dt_fim_atual)
         self._limitar_periodo()
@@ -290,6 +303,7 @@ class ObrasWidget(QWidget):
         self._item_filtro_ativo = item
         item = item.upper()
         comprador = self.cb_comprador.currentText().strip().upper()
+        solicitante = self.cb_solicitante.currentText().strip().upper()
         d_ini = self._qdate_to_date(self.dt_ini.date())
         d_fim = self._qdate_to_date(self.dt_fim.date())
         if d_ini > d_fim:
@@ -304,6 +318,10 @@ class ObrasWidget(QWidget):
             if item and item not in (d.get("itens_texto") or "").upper():
                 continue
             if comprador and comprador not in (d.get("comprador") or "").upper():
+                continue
+            if solicitante and solicitante not in (
+                d.get("material_solicitado_por") or ""
+            ).strip().upper():
                 continue
             pd = self._pedido_data(d)
             if pd is None:
