@@ -82,6 +82,7 @@ powershell -ExecutionPolicy Bypass -File tools\build_release.ps1
 | CI falha `database` / `.spec not found` | **Run workflow** novo no `main` (commit recente), não Re-run antigo |
 | Robocopy falhou | Fechar `.exe` em todos os PCs; repetir publicar |
 | Só copiei o `.exe` | Copiar pasta inteira (`_internal` + `.exe`) ou usar `publicar_build_na_rede.ps1` |
+| Erro zlib / `invalid stored block lengths` | Zip corrompido ou cópia incompleta: baixe de novo, extraia em `C:\Temp`, teste o `.exe` localmente, depois `publicar_build_na_rede.ps1` |
 
 ---
 
