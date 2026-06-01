@@ -31,21 +31,27 @@ jobs:
         run: python -m PyInstaller SistemaAuditoriaBrasul.spec --clean --noconfirm
 
       - name: Empacotar artefato
+        shell: pwsh
         run: |
-          Compress-Archive -Path "dist\SISTEMA AUDITORIA BRASUL\*" -DestinationPath SistemaAuditoriaBrasul-build.zip -Force
+          $zip = "SistemaAuditoriaBrasul-build.zip"
+          if ("${{ github.ref_type }}" -eq "tag") {
+            $zip = "SistemaAuditoriaBrasul-${{ github.ref_name }}.zip"
+          }
+          Compress-Archive -Path "dist\SISTEMA AUDITORIA BRASUL\*" -DestinationPath $zip -Force
+          "ZIP_NAME=$zip" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Upload artefato (30 dias)
         uses: actions/upload-artifact@v4
         with:
-          name: SistemaAuditoriaBrasul-${{ github.sha }}
-          path: SistemaAuditoriaBrasul-build.zip
+          name: SistemaAuditoriaBrasul-${{ github.ref_name }}
+          path: ${{ env.ZIP_NAME }}
           retention-days: 30
 
       - name: Release no GitHub (somente tags v*)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: SistemaAuditoriaBrasul-build.zip
+          files: ${{ env.ZIP_NAME }}
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
