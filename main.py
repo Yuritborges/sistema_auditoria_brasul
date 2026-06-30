@@ -53,6 +53,15 @@ def main():
     _configure_logging()
     log = logging.getLogger(__name__)
 
+    if sys.platform.startswith("win"):
+        try:
+            from app.confiar_rede_windows import aplicar_se_necessario
+            from app.rede_paths import resolver_base_rede_dir
+
+            aplicar_se_necessario(resolver_base_rede_dir())
+        except Exception:
+            pass
+
     app = QApplication(sys.argv)
     app.setApplicationName("SistemaAuditoriaBrasul")
     app.setApplicationDisplayName("Sistema de Auditoria Brasul")

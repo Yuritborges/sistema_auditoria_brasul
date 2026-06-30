@@ -1,6 +1,8 @@
 import os
 import sys
 
+from app.rede_paths import DEFAULT_BASE_REDE_SUFFIX, resolver_base_rede_dir
+
 
 def _resolve_base_dir():
     # No .exe (PyInstaller), gravar dados ao lado do executável (persistente), não em pasta temporária.
@@ -70,8 +72,9 @@ def resolve_app_icon_path():
             return found
     return ""
 
-# Mesma árvore do sistema de pedidos (Z:\0 OBRAS\brasul_pedidos\...).
-BASE_REDE_PEDIDOS = r"Z:\0 OBRAS\brasul_pedidos"
+# Mesma árvore do sistema de pedidos — detecta Z:, Y:, etc. (ver app/config/rede.py).
+BASE_REDE_PEDIDOS = resolver_base_rede_dir()
+_OBRAS_ROOT = os.path.dirname(BASE_REDE_PEDIDOS)
 CADASTROS_COMPARTILHADOS_DIR = os.path.join(BASE_REDE_PEDIDOS, "cadastros_compartilhados")
 OBRAS_JSON_PATH = os.path.join(CADASTROS_COMPARTILHADOS_DIR, "obras.json")
 FORNECEDORES_JSON_PATH = os.path.join(CADASTROS_COMPARTILHADOS_DIR, "fornecedores.json")
@@ -106,10 +109,10 @@ def resolve_logo_path():
 
 PDF_ROOT_CANDIDATES = [
     os.environ.get("AUDITORIA_PDF_ROOT", "").strip(),
-    r"Z:\0 OBRAS\00 - PEDIDO DE COMPRA",
+    os.path.join(_OBRAS_ROOT, "00 - PEDIDO DE COMPRA"),
     BASE_REDE_PEDIDOS,
-    r"Z:\0 OBRAS\01 - OBRAS BRASUL",
-    r"Z:\0 OBRAS\01 - OBRAS INTERIORANA",
+    os.path.join(_OBRAS_ROOT, "01 - OBRAS BRASUL"),
+    os.path.join(_OBRAS_ROOT, "01 - OBRAS INTERIORANA"),
     os.path.join(BASE_DIR, "pedidos_gerados"),
 ]
 
@@ -170,7 +173,7 @@ def _python_for_consolidar_subprocess():
         return os.path.abspath(explicit)
     if not getattr(sys, "frozen", False):
         return sys.executable
-    ob = os.path.dirname(BASE_REDE_PEDIDOS)
+    ob = _OBRAS_ROOT
     for folder in ("sistema_de_pedidos_brasulv2", "sistema_de_pedidos_brasul", "sistema_auditoria_brasul"):
         cand = os.path.join(ob, folder, ".venv", "Scripts", "python.exe")
         if os.path.isfile(cand):
@@ -191,7 +194,7 @@ def resolve_consolidar_argv():
         if not py:
             return None
         return [py, os.path.abspath(script)]
-    ob = os.path.dirname(BASE_REDE_PEDIDOS)
+    ob = _OBRAS_ROOT
     for folder in ("sistema_de_pedidos_brasulv2", "sistema_de_pedidos_brasul"):
         cand = os.path.join(ob, folder, "tools", "consolidar_rede.py")
         if os.path.isfile(cand):
