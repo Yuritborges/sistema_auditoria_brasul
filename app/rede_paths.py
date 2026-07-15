@@ -5,7 +5,11 @@ from __future__ import annotations
 import os
 
 DEFAULT_BASE_REDE_SUFFIX = os.path.join("0 OBRAS", "brasul_pedidos")
+# Mapeamento novo (2026-07): unidade pode apontar direto para "0 obras",
+# ficando a pasta em {letra}:\brasul_pedidos.
+DEFAULT_BASE_REDE_NOME = "brasul_pedidos"
 DEFAULT_BASE_REDE_DIR = r"Z:\0 OBRAS\brasul_pedidos"
+DEFAULT_BASE_REDE_UNC = r"\\192.168.15.250\arquivos brasul\0 OBRAS\brasul_pedidos"
 DEFAULT_SERVIDOR_REDE_HOST = "192.168.15.250"
 DEFAULT_CONFIGURAR_INTRANET_WINDOWS = True
 
@@ -27,8 +31,9 @@ def resolver_base_rede_dir() -> str:
     """
     Descobre a pasta brasul_pedidos na rede.
 
-    Ordem: BRASUL_REDE_DIR ou AUDITORIA_REDE_DIR → letras Z..A → DEFAULT_BASE_REDE_DIR.
-    Mesma lógica do sistema de pedidos — funciona com Z: (Iury) ou Y: (Thamyres).
+    Ordem: BRASUL_REDE_DIR ou AUDITORIA_REDE_DIR → letras Z..A (layout antigo
+    {letra}:\0 OBRAS\brasul_pedidos e novo {letra}:\brasul_pedidos) → UNC →
+    DEFAULT_BASE_REDE_DIR. Mesma lógica do sistema de pedidos.
     """
     env = (
         (os.environ.get("BRASUL_REDE_DIR") or "").strip()
@@ -39,6 +44,9 @@ def resolver_base_rede_dir() -> str:
         candidatos.append(env)
     for letra in "ZYXWVUTSRQPONMLKJIHGFED":
         candidatos.append(os.path.join(f"{letra}:\\", DEFAULT_BASE_REDE_SUFFIX))
+        # Mapeamento novo: unidade aponta direto para a pasta "0 obras"
+        candidatos.append(os.path.join(f"{letra}:\\", DEFAULT_BASE_REDE_NOME))
+    candidatos.append(DEFAULT_BASE_REDE_UNC)
     candidatos.append(DEFAULT_BASE_REDE_DIR)
 
     vistos: set[str] = set()

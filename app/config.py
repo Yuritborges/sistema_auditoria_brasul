@@ -72,7 +72,8 @@ def resolve_app_icon_path():
             return found
     return ""
 
-# Mesma árvore do sistema de pedidos — detecta Z:, Y:, etc. (ver app/config/rede.py).
+# Mesma árvore do sistema de pedidos — detecta Z:, Y:, mapeamento novo e UNC
+# (ver app/rede_paths.py).
 BASE_REDE_PEDIDOS = resolver_base_rede_dir()
 _OBRAS_ROOT = os.path.dirname(BASE_REDE_PEDIDOS)
 CADASTROS_COMPARTILHADOS_DIR = os.path.join(BASE_REDE_PEDIDOS, "cadastros_compartilhados")
