@@ -217,13 +217,16 @@ class ObrasWidget(QWidget):
         self.dt_ini.blockSignals(True)
         self.dt_fim.blockSignals(True)
         try:
-            self.dt_ini.setMaximumDate(min(d1, today))
-            self.dt_fim.setMinimumDate(d0)
+            floor = QDate(1990, 1, 1)
+            self.dt_ini.setMinimumDate(floor)
+            self.dt_fim.setMinimumDate(floor)
+            self.dt_ini.setMaximumDate(min(d1, today) if d1.isValid() else today)
             self.dt_fim.setMaximumDate(today)
             if d0 > d1:
                 self.dt_fim.setDate(d0)
             elif d1 > today:
                 self.dt_fim.setDate(today)
+            self.dt_fim.setMinimumDate(self.dt_ini.date())
         finally:
             self.dt_ini.blockSignals(False)
             self.dt_fim.blockSignals(False)

@@ -70,6 +70,11 @@ def main():
     app.setStyle("Fusion")
     # Aplica identidade visual global (inclui popups/combobox/messagebox).
     app.setStyleSheet(APP_STYLESHEET)
+    from app.ui.no_wheel_filter import NoWheelOnValueEditorsFilter
+
+    # Impede scroll do mouse de trocar combo/data/spinbox sem querer (todas as abas).
+    _no_wheel = NoWheelOnValueEditorsFilter(app)
+    app.installEventFilter(_no_wheel)
     win = MainWindowPatrao()
     ic = _aplicar_icone(app, win)
     if ic.isNull():

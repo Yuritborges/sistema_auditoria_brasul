@@ -1,6 +1,14 @@
-from PySide6.QtCore import QDate, Qt
-from PySide6.QtGui import QColor, QPalette
-from PySide6.QtWidgets import QCalendarWidget, QDateEdit, QDialog, QHBoxLayout, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtCore import QDate, QEvent, Qt
+from PySide6.QtGui import QColor, QPalette, QWheelEvent
+from PySide6.QtWidgets import (
+    QCalendarWidget,
+    QDateEdit,
+    QDialog,
+    QHBoxLayout,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 from app.ui.widgets.brasul_combo import _criar_botao_seta
 
@@ -33,6 +41,10 @@ class BrasulDateEdit(QDateEdit):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._reposicionar_botao_cal()
+
+    def wheelEvent(self, event: QWheelEvent):
+        # Scroll do mouse não deve alterar a data.
+        event.ignore()
 
     def _polish_calendar(self):
         cal = self.calendarWidget()
@@ -98,7 +110,9 @@ class BrasulDateEdit(QDateEdit):
         super().mousePressEvent(event)
 
     def eventFilter(self, obj, event):
-        if event.type() == event.Type.MouseButtonPress and event.button() == Qt.LeftButton:
+        if event.type() == QEvent.Type.Wheel:
+            return True
+        if event.type() == QEvent.Type.MouseButtonPress and event.button() == Qt.LeftButton:
             if obj is self or obj is self.lineEdit():
                 self._open_calendar_dialog()
                 return True
@@ -114,7 +128,11 @@ class BrasulDateEdit(QDateEdit):
         lay.setSpacing(10)
 
         cal = QCalendarWidget(dlg)
-        cal.setSelectedDate(self.date())
+        atual = self.date() if self.date().isValid() else QDate.currentDate()
+        cal.setSelectedDate(atual)
+        mn = self.minimumDate()
+        if mn.isValid():
+            cal.setMinimumDate(mn)
         cap = self.maximumDate()
         cal.setMaximumDate(cap if cap.isValid() else QDate.currentDate())
         cal.setGridVisible(False)
@@ -123,6 +141,10 @@ class BrasulDateEdit(QDateEdit):
         lay.addWidget(cal)
 
         row = QHBoxLayout()
+        btn_hoje = QPushButton("Hoje")
+        btn_ano = QPushButton("Início do ano")
+        row.addWidget(btn_hoje)
+        row.addWidget(btn_ano)
         row.addStretch(1)
         btn_cancel = QPushButton("Cancelar")
         btn_ok = QPushButton("Aplicar")
@@ -131,6 +153,27 @@ class BrasulDateEdit(QDateEdit):
         row.addWidget(btn_ok)
         lay.addLayout(row)
 
+        def _ir_hoje():
+            hoje = QDate.currentDate()
+            if cal.maximumDate().isValid() and hoje > cal.maximumDate():
+                hoje = cal.maximumDate()
+            if cal.minimumDate().isValid() and hoje < cal.minimumDate():
+                hoje = cal.minimumDate()
+            cal.setSelectedDate(hoje)
+            cal.setCurrentPage(hoje.year(), hoje.month())
+
+        def _ir_inicio_ano():
+            hoje = QDate.currentDate()
+            alvo = QDate(hoje.year(), 1, 1)
+            if cal.minimumDate().isValid() and alvo < cal.minimumDate():
+                alvo = cal.minimumDate()
+            if cal.maximumDate().isValid() and alvo > cal.maximumDate():
+                alvo = cal.maximumDate()
+            cal.setSelectedDate(alvo)
+            cal.setCurrentPage(alvo.year(), alvo.month())
+
+        btn_hoje.clicked.connect(_ir_hoje)
+        btn_ano.clicked.connect(_ir_inicio_ano)
         btn_cancel.clicked.connect(dlg.reject)
         cal.activated.connect(lambda _d: dlg.accept())
         btn_ok.clicked.connect(dlg.accept)

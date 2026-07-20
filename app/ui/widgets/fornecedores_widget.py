@@ -310,6 +310,8 @@ class FornecedoresWidget(QWidget):
         jan1 = QDate(today.year(), 1, 1)
         self.dt_ini.blockSignals(True)
         self.dt_fim.blockSignals(True)
+        self.dt_ini.setMinimumDate(QDate(1990, 1, 1))
+        self.dt_fim.setMinimumDate(QDate(1990, 1, 1))
         self.dt_ini.setDate(jan1)
         self.dt_fim.setDate(today)
         self.dt_ini.blockSignals(False)
@@ -381,24 +383,20 @@ class FornecedoresWidget(QWidget):
         self._garantir_combo_digitavel(self.cb_obra)
 
     def _default_period_from_rows(self):
+        """Período inicial = ano corrente (igual Pedidos/Itens/Obras).
+
+        Não usa a data mais antiga do fornecedor (ex.: 2006) — isso travava o filtro
+        e o calendário no passado. O histórico completo aparece em lbl_base_ref.
+        """
         today = QDate.currentDate()
-        datas = [d for p in self._rows_base if (d := self._pedido_data(p)) is not None]
-        if not datas:
-            self.dt_ini.blockSignals(True)
-            self.dt_fim.blockSignals(True)
-            self.dt_ini.setDate(QDate(today.year(), 1, 1))
-            self.dt_fim.setDate(today)
-            self.dt_ini.blockSignals(False)
-            self.dt_fim.blockSignals(False)
-            self._limitar_periodo()
-            return
-        d_min, d_max = min(datas), max(datas)
-        q_min = QDate(d_min.year, d_min.month, d_min.day)
-        q_max = QDate(d_max.year, d_max.month, d_max.day)
+        jan1 = QDate(today.year(), 1, 1)
         self.dt_ini.blockSignals(True)
         self.dt_fim.blockSignals(True)
-        self.dt_ini.setDate(q_min)
-        self.dt_fim.setDate(min(q_max, today))
+        # Libera o mínimo para o usuário poder escolher anos anteriores se quiser.
+        self.dt_ini.setMinimumDate(QDate(1990, 1, 1))
+        self.dt_fim.setMinimumDate(QDate(1990, 1, 1))
+        self.dt_ini.setDate(jan1)
+        self.dt_fim.setDate(today)
         self.dt_ini.blockSignals(False)
         self.dt_fim.blockSignals(False)
         self._limitar_periodo()
@@ -410,13 +408,17 @@ class FornecedoresWidget(QWidget):
         self.dt_ini.blockSignals(True)
         self.dt_fim.blockSignals(True)
         try:
-            self.dt_ini.setMaximumDate(min(d1, today))
-            self.dt_fim.setMinimumDate(d0)
+            floor = QDate(1990, 1, 1)
+            self.dt_ini.setMinimumDate(floor)
+            self.dt_fim.setMinimumDate(floor)
+            self.dt_ini.setMaximumDate(min(d1, today) if d1.isValid() else today)
             self.dt_fim.setMaximumDate(today)
             if d0 > d1:
                 self.dt_fim.setDate(d0)
             elif d1 > today:
                 self.dt_fim.setDate(today)
+            # Após normalizar, acopla fim >= ini sem impedir navegar o calendário para trás.
+            self.dt_fim.setMinimumDate(self.dt_ini.date())
         finally:
             self.dt_ini.blockSignals(False)
             self.dt_fim.blockSignals(False)
@@ -499,9 +501,17 @@ class FornecedoresWidget(QWidget):
 
         self._atualizar_kpis_filtrado(total_f, q_f, media_f, obras_f)
 
+        datas_base = [d for p in self._rows_base if (d := self._pedido_data(p)) is not None]
+        if datas_base:
+            d_min, d_max = min(datas_base), max(datas_base)
+            hist = (
+                f" | Histórico na base: {d_min.strftime('%d/%m/%Y')} → {d_max.strftime('%d/%m/%Y')}"
+            )
+        else:
+            hist = ""
         self.lbl_base_ref.setText(
             f"Referência base (todos os pedidos do fornecedor): {self._fmt(total_base)} | "
-            f"{q_base} pedido(s) | {obras_base} obra(s) | Última compra: {ultima_base}"
+            f"{q_base} pedido(s) | {obras_base} obra(s) | Última compra: {ultima_base}{hist}"
         )
 
         ultima_f = rows[0].get("data_pedido") if rows else "-"
